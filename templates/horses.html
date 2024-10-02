@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Horses</title>
+</head>
+<body>
+    <h1>List of Horses</h1>
+    <table border ="1">
+        <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Weight</th>
+            <th>Health Score</th>
+        </tr>
+        {% for horse in horses %}
+        <tr>
+            <td>{{ horse[0] }}</td>
+            <td>{{ horse[1] }}</td>
+            <td>{{ horse[2] }}</td>
+            <td>{{ horse[3] }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    <br>
+    <a href="/add_horse">Add New Horse</a><br>
+    <a href="/add_horse_picture">Add New Horse Picture</a>
+</body>
+</html>
