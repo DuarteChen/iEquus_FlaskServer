@@ -1,4 +1,3 @@
-import os 
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 from flask_mysqldb import MySQL
 from datetime import datetime
@@ -6,19 +5,12 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-
-
-
-
-
+mysql = MySQL(app)
 # Configurações do MySQL
 app.config['MYSQL_HOST'] = 'localhost'
 app.config['MYSQL_USER'] = 'root'
 app.config['MYSQL_PASSWORD'] = 'i-equus'
 app.config['MYSQL_DB'] = 'equusDB'
-
-mysql = MySQL(app)
-
 
 # Folder where the pictures will be saved
 UPLOAD_FOLDER = 'static/horses_pictures/'
@@ -49,7 +41,7 @@ def add_horse():
         name = request.form['name']
         weight = request.form['weight']
         health_score = request.form['health_score']
-
+        """
         # Handle picture upload
         if 'picture' not in request.files:
             return 'No file part'
@@ -66,20 +58,22 @@ def add_horse():
             
             cursor = mysql.connection.cursor()
 
-            # Insert horse data into the 'horses' table
-            cursor.execute('''INSERT INTO horses (name, weight, health_score) 
-                              VALUES (%s, %s, %s)''', (name, weight, health_score))
-            horse_id = cursor.lastrowid  # Get the ID of the newly inserted horse
 
+            
             # Insert the picture information into the 'horse_pictures' table
             cursor.execute('''INSERT INTO horse_pictures (horse_id, picture_name, date_taken) 
                               VALUES (%s, %s, %s)''', (horse_id, picture_name, date_taken))
+"""
+            # Insert horse data into the 'horses' table
+        cursor.execute('''INSERT INTO horses (name, weight, health_score) 
+                            VALUES (%s, %s, %s)''', (name, weight, health_score))
+        horse_id = cursor.lastrowid  # Get the ID of the newly inserted horse            
 
-            # Commit the changes and close the cursor
-            mysql.connection.commit()
-            cursor.close()
+        # Commit the changes and close the cursor
+        mysql.connection.commit()
+        cursor.close()
 
-            # Redirect to the list of horses
-            return redirect(url_for('get_horses'))
+        # Redirect to the list of horses
+        return redirect(url_for('get_horses'))
 
     return render_template('add_horse.html')
