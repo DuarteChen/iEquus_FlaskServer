@@ -13,6 +13,7 @@
             <th>Name</th>
             <th>Weight</th>
             <th>Health Score</th>
+            <th>Picture</th>
         </tr>
         {% for horse in horses %}
         <tr>
@@ -20,11 +21,17 @@
             <td>{{ horse[1] }}</td>
             <td>{{ horse[2] }}</td>
             <td>{{ horse[3] }}</td>
+            <td>
+                {% if horse[4] %}
+                    <img src="{{ url_for('static', filename='horses_pictures/' ~ horse[4]) }}" alt="Picture of {{ horse[1] }}" width="100">
+                {% else %}
+                    No picture available
+                {% endif %}
+            </td>
         </tr>
         {% endfor %}
     </table>
     <br>
     <a href="/add_horse">Add New Horse</a><br>
-    <a href="/add_horse_picture">Add New Horse Picture</a>
 </body>
 </html>
