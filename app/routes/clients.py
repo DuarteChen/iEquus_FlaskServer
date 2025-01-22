@@ -30,10 +30,13 @@ def add_client():
     except Exception as e:
         return jsonify({"Error": str(e)}), 500
 
+
+
 @clients_bp.route('/clients', methods=['GET'])
 def get_clients():
     try:
-        clients = Client.query.all()
+        clients = Client.query.all() #cria-se uma lista de objetos da classe Client
+
         clients_list = [{"idClient": client.idClient, "name": client.name, "email": client.email,
                          "phoneNumber": client.phoneNumber, "phoneCountryCode": client.phoneCountryCode}
                         for client in clients]
