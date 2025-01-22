@@ -1,76 +1,83 @@
-import os
-from flask import Flask, render_template, request, redirect, url_for, jsonify
-from flask_mysqldb import MySQL
-from datetime import datetime
-from werkzeug.utils import secure_filename
+from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
 
+# Initialize the Flask application
 app = Flask(__name__)
 
-mysql = MySQL(app)
-# Configurações do MySQL
-app.config['MYSQL_HOST'] = 'localhost'
-app.config['MYSQL_USER'] = 'root'
-app.config['MYSQL_PASSWORD'] = 'i-equus'
-app.config['MYSQL_DB'] = 'equusDB'
+# Database configuration (Make sure to replace 'localhost' with your container's host or IP)
+app.config["SQLALCHEMY_DATABASE_URI"] = "mysql+pymysql://root:a22203153@iEquus-mysql:3306/iEquusDB"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# Folder where the pictures will be saved
-UPLOAD_FOLDER = 'static/horses_pictures/'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+# Initialize the database object
+db = SQLAlchemy(app)
 
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
-#horses list
-@app.route('/horses')
-def get_horses():
-    cursor = mysql.connection.cursor()
-
-    cursor.execute('SELECT h.id, h.name, h.weight, h.health_score, hp.picture_name FROM horses h LEFT JOIN horse_pictures hp ON h.id = hp.horse_id')
-    horses = cursor.fetchall()
-    cursor.close()
+# Define the Client model
+class Client(db.Model):
+    __tablename__ = 'Clients'
     
-    return render_template('horses.html', horses=horses)
+    idClient = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(255), nullable=False)
+    email = db.Column(db.String(255), nullable=True)
+    phoneNumber = db.Column(db.String(20), nullable=True)
+    phoneCountryCode = db.Column(db.String(10), nullable=True)
 
+    def __init__(self, name, email=None, phoneNumber=None, phoneCountryCode=None):
+        self.name = name
+        self.email = email
+        self.phoneNumber = phoneNumber
+        self.phoneCountryCode = phoneCountryCode
 
-@app.route('/add_horse', methods=['GET', 'POST'])
-def add_horse():
-    if request.method == 'POST':
-        #os campos do formulário
-        name = request.form['name']
-        weight = request.form['weight']
-        health_score = request.form['health_score']
-        
+# Define the route to receive Client data
+@app.route('/clients', methods=['POST'])
+def add_client():
+    try:
+        data = request.get_json()
 
-        if 'picture' not in request.files:
-            return 'No file part'
-        
-        file = request.files['picture']
-        
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            picture_name = filename
-            date_taken = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        
+        # Ensure required data exists in the request
+        if 'name' not in data:
+            return jsonify({"error": "Client name is required"}), 400
 
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-            
-            
+        # Create a new Client instance
+        client = Client(
+            name=data['name'],
+            email=data.get('email'),
+            phoneNumber=data.get('phoneNumber'),
+            phoneCountryCode=data.get('phoneCountryCode')
+        )
 
-            cursor = mysql.connection.cursor()
+        # Add the client to the session and commit to the database
+        db.session.add(client)
+        db.session.commit()
 
-            cursor.execute('INSERT INTO horses (name, weight, health_score) VALUES (%s, %s, %s)', (name, weight, health_score)) 
-            
-            horse_id = cursor.lastrowid         
-            
+        # Return the newly created client data
+        return jsonify({
+            "idClient": client.idClient,
+            "name": client.name,
+            "email": client.email,
+            "phoneNumber": client.phoneNumber,
+            "phoneCountryCode": client.phoneCountryCode
+        }), 201
 
-            cursor.execute('INSERT INTO horse_pictures (horse_id, picture_name, date_taken) VALUES (%s, %s, %s)', (horse_id, picture_name, date_taken))
+    except Exception as e:
+        # In case of error, return an error message
+        return jsonify({"error": str(e)}), 500
 
-        mysql.connection.commit()
-        cursor.close()
+@app.route("/clients", methods=["GET"])
+def get_clients():
+    try:
+        # Fetch all clients from the database
+        clients = Client.query.all()
 
-        return redirect(url_for('get_horses'))
+        # Prepare the response data as a list of dictionaries
+        clients_list = [{"idClient": client.idClient, "name": client.name, "email": client.email,
+                         "phoneNumber": client.phoneNumber, "phoneCountryCode": client.phoneCountryCode}
+                        for client in clients]
 
-    return render_template('add_horse.html')
+        return jsonify(clients_list), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+# Run the application
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=9090)
