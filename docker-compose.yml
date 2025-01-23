@@ -1,0 +1,37 @@
+version: '3'
+services:
+  db:
+    image: mysql:latest
+    container_name: iEquus-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: a22203153
+      MYSQL_DATABASE: iEquusDB
+    ports:
+      - "3306:3306" #se quiser abrir o mysql é necessário trocar este valor 
+             #para "3306:3306" para que o mapeamento de portas esteja aberto para fora da network deste compose
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - equus_network
+
+  flask:
+    build: .
+    container_name: iEquus-flask
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=development
+    ports:
+      - "9090:9090"
+    depends_on:
+      - db
+    networks:
+      - equus_network
+    volumes:
+      - .:/app  # Mapear o diretório local para o container
+
+networks:
+  equus_network:
+    driver: bridge
+
+volumes:
+  mysql_data:  # Volume para o banco de dados MySQL
