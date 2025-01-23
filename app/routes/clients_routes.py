@@ -13,18 +13,18 @@ def add_client():
         client = Client(
             name=data['name'],
             email=data.get('email'),
-            phoneNumber=data.get('phoneNumber'),
-            phoneCountryCode=data.get('phoneCountryCode')
+            phone_number=data.get('phoneNumber'),
+            phone_country_code=data.get('phoneCountryCode')
         )
         db.session.add(client)
         db.session.commit()
         
         return jsonify({
-            "idClient": client.idClient,
+            "idClient": client.id,
             "name": client.name,
             "email": client.email,
-            "phoneNumber": client.phoneNumber,
-            "phoneCountryCode": client.phoneCountryCode
+            "phoneNumber": client.phone_number,
+            "phoneCountryCode": client.phone_country_code
         }), 201
 
     except Exception as e:
@@ -37,8 +37,8 @@ def get_clients():
     try:
         clients = Client.query.all() #cria-se uma lista de objetos da classe Client
 
-        clients_list = [{"idClient": client.idClient, "name": client.name, "email": client.email,
-                         "phoneNumber": client.phoneNumber, "phoneCountryCode": client.phoneCountryCode}
+        clients_list = [{"idClient": client.id, "name": client.name, "email": client.email,
+                         "phoneNumber": client.phone_number, "phoneCountryCode": client.phone_country_code}
                         for client in clients]
         return jsonify(clients_list), 200
 
