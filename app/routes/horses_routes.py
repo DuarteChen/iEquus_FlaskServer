@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, url_for
 from app.models import Horse, db
 
 horses_bp = Blueprint('horses', __name__)
@@ -44,12 +44,12 @@ def get_horses():
         horses_list = [{
             "idHorse": horse.id,
             "name": horse.name,
-            "profilePicturePath": horse.profile_picture_path,
+            "profilePicturePath": url_for('static', filename=f'images/horse_profile/{horse.profile_picture_path}', _external=True) if horse.profile_picture_path else None,
             "birthDate": horse.birth_date,
-            "pictureRightFrontPath": horse.picture_right_front_path,
-            "pictureLeftFrontPath": horse.picture_left_front_path,
-            "pictureRightHindPath": horse.picture_right_hind_path,
-            "pictureLeftHindPath": horse.picture_left_hind_path
+            "pictureRightFrontPath": url_for('static', filename=f'images/{horse.picture_right_front_path}', _external=True) if horse.picture_right_front_path else None,
+            "pictureLeftFrontPath": url_for('static', filename=f'images/{horse.picture_left_front_path}', _external=True) if horse.picture_left_front_path else None,
+            "pictureRightHindPath": url_for('static', filename=f'images/{horse.picture_right_hind_path}', _external=True) if horse.picture_right_hind_path else None,
+            "pictureLeftHindPath": url_for('static', filename=f'images/{horse.picture_left_hind_path}', _external=True) if horse.picture_left_hind_path else None
         } for horse in horses]
         
         return jsonify(horses_list), 200
