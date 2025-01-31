@@ -1,4 +1,9 @@
 cryptography
-Flask==2.2.5
+Flask==2.3.3
 Flask-SQLAlchemy==3.0.5
 PyMySQL==1.1.0
+flask-sqlalchemy
+Pillow
+uuid
+phonenumbers
+email-validator
