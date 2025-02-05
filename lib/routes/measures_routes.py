@@ -3,65 +3,60 @@ from lib.models import Measure, db
 
 measures_bp = Blueprint('measures', __name__)
 
+# Add a measure
 @measures_bp.route('/measures', methods=['POST'])
 def add_measure():
-    try:
-        data = request.get_json()
-        if 'vetAppointment' not in data:
-            return jsonify({"error": "vetAppointment is required"}), 400
-        
-        measure = Measure(
-            vet_appointment=data['vetAppointment'],
-            user_bw=data.get('userBW'),
-            algorithm_bw=data.get('algorithmBW'),
-            user_bcs=data.get('userBCS'),
-            algorithm_bcs=data.get('algorithmBCS'),
-            bpm=data.get('BPM'),
-            ecg_time=data.get('ECGtime'),
-            muscle_tension_frequency=data.get('muscleTensionFrequency'),
-            muscle_tension_stifness=data.get('muscleTensionStifness'),
-            muscle_tension_r=data.get('muscleTensionR')
-        )
-        db.session.add(measure)
-        db.session.commit()
-        
-        return jsonify({
-            "idMeasure": measure.id,
-            "vetAppointment": measure.vet_appointment,
-            "userBW": measure.user_bw,
-            "algorithmBW": measure.algorithm_bw,
-            "userBCS": measure.user_bcs,
-            "algorithmBCS": measure.algorithm_bcs,
-            "BPM": measure.bpm,
-            "ECGtime": measure.ecg_time,
-            "muscleTensionFrequency": measure.muscle_tension_frequency,
-            "muscleTensionStifness": measure.muscle_tension_stifness,
-            "muscleTensionR": measure.muscle_tension_r
-        }), 201
+    data = request.get_json()
+    new_measure = Measure(
+        userBW=data.get('userBW'),
+        algorithmBW=data.get('algorithmBW'),
+        userBCS=data.get('userBCS'),
+        algorithmBCS=data.get('algorithmBCS'),
+        date=data['date'],
+        coordinates=data.get('coordinates'),
+        picturePath=data['picturePath'],
+        favorite=data.get('favorite'),
+        horseId=data['horseId'],
+        veterinarianId=data.get('veterinarianId'),
+        appointmentId=data.get('appointmentId')
+    )
+    db.session.add(new_measure)
+    db.session.commit()
+    return jsonify({'message': 'Measure added successfully'}), 201
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
+# Get all measures
 @measures_bp.route('/measures', methods=['GET'])
 def get_measures():
-    try:
-        measures = Measure.query.all()
-        measures_list = [{
-            "idMeasure": m.id,
-            "vetAppointment": m.vet_appointment,
-            "userBW": m.user_bw,
-            "algorithmBW": m.algorithm_bw,
-            "userBCS": m.user_bcs,
-            "algorithmBCS": m.algorithm_bcs,
-            "BPM": m.bpm,
-            "ECGtime": m.ecg_time,
-            "muscleTensionFrequency": m.muscle_tension_frequency,
-            "muscleTensionStifness": m.muscle_tension_stifness,
-            "muscleTensionR": m.muscle_tension_r
-        } for m in measures]
-        
-        return jsonify(measures_list), 200
+    measures = Measure.query.all()
+    return jsonify([measure.to_dict() for measure in measures]), 200
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# Get measures by horse ID
+@measures_bp.route('/measures/horse/<int:horseId>', methods=['GET'])
+def get_measures_by_horse(horseId):
+    measures = Measure.query.filter_by(horseId=horseId).all()
+    return jsonify([measure.to_dict() for measure in measures]), 200
+
+# Get measures by appointment ID
+@measures_bp.route('/measures/appointment/<int:appointment_id>', methods=['GET'])
+def get_measures_by_appointment(appointment_id):
+    measures = Measure.query.filter_by(appointmentId=appointment_id).all()
+    return jsonify([measure.to_dict() for measure in measures]), 200
+
+# Update a measure
+@measures_bp.route('/measures/<int:measure_id>', methods=['PUT'])
+def update_measure(measure_id):
+    measure = Measure.query.get_or_404(measure_id)
+    data = request.get_json()
+    for key, value in data.items():
+        if hasattr(measure, key):
+            setattr(measure, key, value)
+    db.session.commit()
+    return jsonify({'message': 'Measure updated successfully'}), 200
+
+# Delete a measure
+@measures_bp.route('/measures/<int:measure_id>', methods=['DELETE'])
+def delete_measure(measure_id):
+    measure = Measure.query.get_or_404(measure_id)
+    db.session.delete(measure)
+    db.session.commit()
+    return jsonify({'message': 'Measure deleted successfully'}), 200

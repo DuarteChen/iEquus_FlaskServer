@@ -28,12 +28,12 @@ def get_horses():
         horses_list = [{
             "idHorse": horse.id,
             "name": horse.name,
-            "profilePicturePath": url_for('static', filename=f'images/horse_profile/{horse.profile_picture_path}', _external=True) if horse.profile_picture_path else None,
-            "birthDate": horse.birth_date,
-            "pictureRightFrontPath": url_for('static', filename=f'images/horse_limbs/{horse.picture_right_front_path}', _external=True) if horse.picture_right_front_path else None,
-            "pictureLeftFrontPath": url_for('static', filename=f'images/horse_limbs/{horse.picture_left_front_path}', _external=True) if horse.picture_left_front_path else None,
-            "pictureRightHindPath": url_for('static', filename=f'images/horse_limbs/{horse.picture_right_hind_path}', _external=True) if horse.picture_right_hind_path else None,
-            "pictureLeftHindPath": url_for('static', filename=f'images/horse_limbs/{horse.picture_left_hind_path}', _external=True) if horse.picture_left_hind_path else None
+            "profilePicturePath": url_for('static', filename=f'images/horse_profile/{horse.profilePicturePath}', _external=True) if horse.profilePicturePath else None,
+            "birthDate": horse.birthDate,
+            "pictureRightFrontPath": url_for('static', filename=f'images/horse_limbs/{horse.pictureRightFrontPath}', _external=True) if horse.pictureRightFrontPath else None,
+            "pictureLeftFrontPath": url_for('static', filename=f'images/horse_limbs/{horse.pictureLeftFrontPath}', _external=True) if horse.pictureLeftFrontPath else None,
+            "pictureRightHindPath": url_for('static', filename=f'images/horse_limbs/{horse.pictureRightHindPath}', _external=True) if horse.pictureRightHindPath else None,
+            "pictureLeftHindPath": url_for('static', filename=f'images/horse_limbs/{horse.pictureLeftHindPath}', _external=True) if horse.pictureLeftHindPath else None
         } for horse in horses]
         
         return jsonify(horses_list), 200
@@ -55,12 +55,12 @@ def get_horseById(id):
         return jsonify({
             "idHorse": horse.id,
             "name": horse.name,
-            "profilePicturePath": horse.profile_picture_path,
-            "birthDate": horse.birth_date,
-            "pictureRightFrontPath": horse.picture_right_front_path,
-            "pictureLeftFrontPath": horse.picture_left_front_path,
-            "pictureRightHindPath": horse.picture_right_hind_path,
-            "pictureLeftHindPath": horse.picture_left_hind_path
+            "profilePicturePath": horse.profilePicturePath,
+            "birthDate": horse.birthDate,
+            "pictureRightFrontPath": horse.pictureRightFrontPath,
+            "pictureLeftFrontPath": horse.pictureLeftFrontPath,
+            "pictureRightHindPath": horse.pictureRightHindPath,
+            "pictureLeftHindPath": horse.pictureLeftHindPath
         }), 201
         
     except Exception as e:
@@ -74,7 +74,7 @@ def add_horse():
         birth_date_str = request.form.get('birthDate') #TODO - Pode ser removida esta linha, depois de ligar com o flutter
         expected_format = "%Y-%m-%d"
         try:
-            birth_date = datetime.strptime(birth_date_str, expected_format)
+            birthDate = datetime.strptime(birth_date_str, expected_format)
         except ValueError:
             return jsonify({"error": "Invalid date format. Please use YYYY-MM-DD."}), 400
 
@@ -87,12 +87,12 @@ def add_horse():
         # Create a new Horse record
         horse = Horse(
             name=name,
-            profile_picture_path=None,
-            birth_date=birth_date,
-            picture_right_front_path=None,
-            picture_left_front_path=None,
-            picture_right_hind_path=None,
-            picture_left_hind_path=None
+            profilePicturePath=None,
+            birthDate=birthDate,
+            pictureRightFrontPath=None,
+            pictureLeftFrontPath=None,
+            pictureRightHindPath=None,
+            pictureLeftHindPath=None
         )
 
         
@@ -109,13 +109,13 @@ def add_horse():
             
             # Generate a unique file name using UUID
             profile_picture_filename = f"{horse.id}_profile_{uuid4()}.webp"
-            profile_picture_path = os.path.join(profile_PicturesFolder, profile_picture_filename)
+            profilePicturePath = os.path.join(profile_PicturesFolder, profile_picture_filename)
 
             # Save the image in WebP format
-            image.save(profile_picture_path, "WEBP", quality=100)
+            image.save(profilePicturePath, "WEBP", quality=100)
 
             # Update the horse record with the profile picture path
-            horse.profile_picture_path = profile_picture_filename
+            horse.profilePicturePath = profile_picture_filename
 
 
         # Handle other possible images (front-right, front-left, hind-right, hind-left)
@@ -124,36 +124,36 @@ def add_horse():
             filename = secure_filename(file.filename)
             image = Image.open(file)
             picture_right_front_filename = f"{horse.id}_right_front_{uuid4()}.webp"
-            picture_right_front_path = os.path.join(limbs_PicturesFolder, picture_right_front_filename)
-            image.save(picture_right_front_path, "WEBP", quality=100)
-            horse.picture_right_front_path = picture_right_front_filename
+            pictureRightFrontPath = os.path.join(limbs_PicturesFolder, picture_right_front_filename)
+            image.save(pictureRightFrontPath, "WEBP", quality=100)
+            horse.pictureRightFrontPath = picture_right_front_filename
         
         if 'pictureLeftFront' in request.files:
             file = request.files['pictureLeftFront']
             filename = secure_filename(file.filename)
             image = Image.open(file)
             picture_left_front_filename = f"{horse.id}_left_front_{uuid4()}.webp"
-            picture_left_front_path = os.path.join(limbs_PicturesFolder, picture_left_front_filename)
-            image.save(picture_left_front_path, "WEBP", quality=100)
-            horse.picture_left_front_path = picture_left_front_filename
+            pictureLeftFrontPath = os.path.join(limbs_PicturesFolder, picture_left_front_filename)
+            image.save(pictureLeftFrontPath, "WEBP", quality=100)
+            horse.pictureLeftFrontPath = picture_left_front_filename
         
         if 'pictureRightHind' in request.files:
             file = request.files['pictureRightHind']
             filename = secure_filename(file.filename)
             image = Image.open(file)
             picture_right_hind_filename = f"{horse.id}_right_hind_{uuid4()}.webp"
-            picture_right_hind_path = os.path.join(limbs_PicturesFolder, picture_right_hind_filename)
-            image.save(picture_right_hind_path, "WEBP", quality=100)
-            horse.picture_right_hind_path = picture_right_hind_filename
+            pictureRightHindPath = os.path.join(limbs_PicturesFolder, picture_right_hind_filename)
+            image.save(pictureRightHindPath, "WEBP", quality=100)
+            horse.pictureRightHindPath = picture_right_hind_filename
         
         if 'pictureLeftHind' in request.files:
             file = request.files['pictureLeftHind']
             filename = secure_filename(file.filename)
             image = Image.open(file)
             picture_left_hind_filename = f"{horse.id}_left_hind_{uuid4()}.webp"
-            picture_left_hind_path = os.path.join(limbs_PicturesFolder, picture_left_hind_filename)
-            image.save(picture_left_hind_path, "WEBP", quality=100)
-            horse.picture_left_hind_path = picture_left_hind_filename
+            pictureLeftHindPath = os.path.join(limbs_PicturesFolder, picture_left_hind_filename)
+            image.save(pictureLeftHindPath, "WEBP", quality=100)
+            horse.pictureLeftHindPath = picture_left_hind_filename
         
         db.session.commit()
 
@@ -162,12 +162,12 @@ def add_horse():
         return jsonify({
             "idHorse": horse.id,
             "name": horse.name,
-            "profilePicturePath": horse.profile_picture_path,
-            "birthDate": horse.birth_date,
-            "pictureRightFrontPath": horse.picture_right_front_path,
-            "pictureLeftFrontPath": horse.picture_left_front_path,
-            "pictureRightHindPath": horse.picture_right_hind_path,
-            "pictureLeftHindPath": horse.picture_left_hind_path
+            "profilePicturePath": horse.profilePicturePath,
+            "birthDate": horse.birthDate,
+            "pictureRightFrontPath": horse.pictureRightFrontPath,
+            "pictureLeftFrontPath": horse.pictureLeftFrontPath,
+            "pictureRightHindPath": horse.pictureRightHindPath,
+            "pictureLeftHindPath": horse.pictureLeftHindPath
         }), 201
 
     except Exception as e:
@@ -193,8 +193,8 @@ def update_horse(id):
             try:
                 # Parse and validate the date format (if provided)
                 expected_format = "%Y-%m-%d"
-                birth_date = datetime.strptime(birth_date_str, expected_format)
-                horse.birth_date = birth_date
+                birthDate = datetime.strptime(birth_date_str, expected_format)
+                horse.birthDate = birthDate
             except ValueError:
                 return jsonify({"error": "Invalid date format. Please use YYYY-MM-DD."}), 400
 
@@ -206,13 +206,13 @@ def update_horse(id):
             
             # Generate a unique file name using UUID
             profile_picture_filename = f"{horse.id}_profile_{uuid4()}.webp"
-            profile_picture_path = os.path.join(profile_PicturesFolder, profile_picture_filename)
+            profilePicturePath = os.path.join(profile_PicturesFolder, profile_picture_filename)
 
             # Save the image in WebP format
-            image.save(profile_picture_path, "WEBP", quality=100)
+            image.save(profilePicturePath, "WEBP", quality=100)
 
             # Update the horse record with the new profile picture path
-            horse.profile_picture_path = profile_picture_filename
+            horse.profilePicturePath = profile_picture_filename
 
         # Handle limb pictures (if uploaded)
         if 'pictureRightFront' in request.files:
@@ -220,36 +220,36 @@ def update_horse(id):
             filename = secure_filename(file.filename)
             image = Image.open(file)
             picture_right_front_filename = f"{horse.id}_right_front_{uuid4()}.webp"
-            picture_right_front_path = os.path.join(limbs_PicturesFolder, picture_right_front_filename)
-            image.save(picture_right_front_path, "WEBP", quality=100)
-            horse.picture_right_front_path = picture_right_front_filename
+            pictureRightFrontPath = os.path.join(limbs_PicturesFolder, picture_right_front_filename)
+            image.save(pictureRightFrontPath, "WEBP", quality=100)
+            horse.pictureRightFrontPath = picture_right_front_filename
         
         if 'pictureLeftFront' in request.files:
             file = request.files['pictureLeftFront']
             filename = secure_filename(file.filename)
             image = Image.open(file)
             picture_left_front_filename = f"{horse.id}_left_front_{uuid4()}.webp"
-            picture_left_front_path = os.path.join(limbs_PicturesFolder, picture_left_front_filename)
-            image.save(picture_left_front_path, "WEBP", quality=100)
-            horse.picture_left_front_path = picture_left_front_filename
+            pictureLeftFrontPath = os.path.join(limbs_PicturesFolder, picture_left_front_filename)
+            image.save(pictureLeftFrontPath, "WEBP", quality=100)
+            horse.pictureLeftFrontPath = picture_left_front_filename
         
         if 'pictureRightHind' in request.files:
             file = request.files['pictureRightHind']
             filename = secure_filename(file.filename)
             image = Image.open(file)
             picture_right_hind_filename = f"{horse.id}_right_hind_{uuid4()}.webp"
-            picture_right_hind_path = os.path.join(limbs_PicturesFolder, picture_right_hind_filename)
-            image.save(picture_right_hind_path, "WEBP", quality=100)
-            horse.picture_right_hind_path = picture_right_hind_filename
+            pictureRightHindPath = os.path.join(limbs_PicturesFolder, picture_right_hind_filename)
+            image.save(pictureRightHindPath, "WEBP", quality=100)
+            horse.pictureRightHindPath = picture_right_hind_filename
         
         if 'pictureLeftHind' in request.files:
             file = request.files['pictureLeftHind']
             filename = secure_filename(file.filename)
             image = Image.open(file)
             picture_left_hind_filename = f"{horse.id}_left_hind_{uuid4()}.webp"
-            picture_left_hind_path = os.path.join(limbs_PicturesFolder, picture_left_hind_filename)
-            image.save(picture_left_hind_path, "WEBP", quality=100)
-            horse.picture_left_hind_path = picture_left_hind_filename
+            pictureLeftHindPath = os.path.join(limbs_PicturesFolder, picture_left_hind_filename)
+            image.save(pictureLeftHindPath, "WEBP", quality=100)
+            horse.pictureLeftHindPath = picture_left_hind_filename
         
         db.session.commit()
 
@@ -257,12 +257,12 @@ def update_horse(id):
         return jsonify({
             "idHorse": horse.id,
             "name": horse.name,
-            "profilePicturePath": horse.profile_picture_path,
-            "birthDate": horse.birth_date,
-            "pictureRightFrontPath": horse.picture_right_front_path,
-            "pictureLeftFrontPath": horse.picture_left_front_path,
-            "pictureRightHindPath": horse.picture_right_hind_path,
-            "pictureLeftHindPath": horse.picture_left_hind_path
+            "profilePicturePath": horse.profilePicturePath,
+            "birthDate": horse.birthDate,
+            "pictureRightFrontPath": horse.pictureRightFrontPath,
+            "pictureLeftFrontPath": horse.pictureLeftFrontPath,
+            "pictureRightHindPath": horse.pictureRightHindPath,
+            "pictureLeftHindPath": horse.pictureLeftHindPath
         }), 200
 
     except Exception as e:
@@ -279,11 +279,11 @@ def delete_horse(id):
 
         # Delete associated images if they exist
         image_paths = [
-            os.path.join(profile_PicturesFolder, horse.profile_picture_path) if horse.profile_picture_path else None,
-            os.path.join(limbs_PicturesFolder, horse.picture_right_front_path) if horse.picture_right_front_path else None,
-            os.path.join(limbs_PicturesFolder, horse.picture_left_front_path) if horse.picture_left_front_path else None,
-            os.path.join(limbs_PicturesFolder, horse.picture_right_hind_path) if horse.picture_right_hind_path else None,
-            os.path.join(limbs_PicturesFolder, horse.picture_left_hind_path) if horse.picture_left_hind_path else None
+            os.path.join(profile_PicturesFolder, horse.profilePicturePath) if horse.profilePicturePath else None,
+            os.path.join(limbs_PicturesFolder, horse.pictureRightFrontPath) if horse.pictureRightFrontPath else None,
+            os.path.join(limbs_PicturesFolder, horse.pictureLeftFrontPath) if horse.pictureLeftFrontPath else None,
+            os.path.join(limbs_PicturesFolder, horse.pictureRightHindPath) if horse.pictureRightHindPath else None,
+            os.path.join(limbs_PicturesFolder, horse.pictureLeftHindPath) if horse.pictureLeftHindPath else None
         ]
 
         # Remove images from the file system

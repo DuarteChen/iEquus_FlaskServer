@@ -7,8 +7,7 @@ services:
       MYSQL_ROOT_PASSWORD: a22203153
       MYSQL_DATABASE: iEquusDB
     ports:
-      - "3306:3306" #se quiser abrir o mysql é necessário trocar este valor 
-             #para "3306:3306" para que o mapeamento de portas esteja aberto para fora da network deste compose
+      - "3306:3306" #se quiser abrir o mysql server para fora da equus_network
     volumes:
       - mysql_data:/var/lib/mysql
     networks:

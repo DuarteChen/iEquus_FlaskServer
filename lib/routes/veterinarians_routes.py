@@ -11,27 +11,27 @@ def add_veterinarian():
     try:
         data = request.get_json()
         name = data.get('name')
-        id_cedula_profissional = data.get('id_cedula_profissional')
+        idCedulaProfissional = data.get('idCedulaProfissional')
         email = data.get('email')
-        phone_number = data.get('phone_number')
-        phone_country_code = data.get('phone_country_code')
+        phoneNumber = data.get('phoneNumber')
+        phoneCountryCode = data.get('phoneCountryCode')
 
-        if not name or not id_cedula_profissional:
+        if not name or not idCedulaProfissional:
             return jsonify({"error": "Veterinarian name and idCedulaProfissional are required"}), 400
         
-        if phone_number and not phone_country_code:
+        if phoneNumber and not phoneCountryCode:
             return jsonify({"error": "Phone number and country code are required"}), 400
         
-        if phone_number:
+        if phoneNumber:
             try:
-                full_number = phonenumbers.parse(phone_number, phone_country_code)
+                full_number = phonenumbers.parse(phoneNumber, phoneCountryCode)
                 if not phonenumbers.is_valid_number(full_number):
                     return jsonify({"error": "Invalid phone number"}), 400
             except phonenumbers.phonenumberutil.NumberParseException:
                 return jsonify({"error": "Invalid phone number format"}), 400
         
         if email:
-            # Validate the email using email-validator
+
             try:
                 validate_email(email)
             except EmailNotValidError as e:
@@ -41,9 +41,9 @@ def add_veterinarian():
         veterinarian = Veterinarian(
             name=name,
             email=email,
-            phone_number=phone_number,
-            phone_country_code=phone_country_code,
-            id_cedula_profissional=id_cedula_profissional
+            phoneNumber=phoneNumber,
+            phoneCountryCode=phoneCountryCode,
+            idCedulaProfissional=idCedulaProfissional
         )
         db.session.add(veterinarian)
         db.session.commit()
@@ -52,14 +52,13 @@ def add_veterinarian():
             "idVeterinary": veterinarian.id,
             "name": veterinarian.name,
             "email": veterinarian.email,
-            "phoneNumber": veterinarian.phone_number,
-            "phoneCountryCode": veterinarian.phone_country_code,
-            "idCedulaProfissional": veterinarian.id_cedula_profissional
+            "phoneNumber": veterinarian.phoneNumber,
+            "phoneCountryCode": veterinarian.phoneCountryCode,
+            "idCedulaProfissional": veterinarian.idCedulaProfissional
         }), 201
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 @veterinarians_bp.route('/veterinarians', methods=['GET'])
 def get_veterinarians():
@@ -69,9 +68,9 @@ def get_veterinarians():
             "idVeterinary": veterinarian.id,
             "name": veterinarian.name,
             "email": veterinarian.email,
-            "phoneNumber": veterinarian.phone_number,
-            "phoneCountryCode": veterinarian.phone_country_code,
-            "idCedulaProfissional": veterinarian.id_cedula_profissional
+            "phoneNumber": veterinarian.phoneNumber,
+            "phoneCountryCode": veterinarian.phoneCountryCode,
+            "idCedulaProfissional": veterinarian.idCedulaProfissional
         } for veterinarian in veterinarians]
         
         return jsonify(veterinarians_list), 200
@@ -82,7 +81,6 @@ def get_veterinarians():
 @veterinarians_bp.route('/veterinarian/<int:id>', methods=['GET'])
 def get_veterinarianById(id):
     try:
-        # Retrieve the veterinarian by ID
         veterinarian = Veterinarian.query.get(id)
         
         if not veterinarian:
@@ -93,9 +91,9 @@ def get_veterinarianById(id):
             "idVeterinary": veterinarian.id,
             "name": veterinarian.name,
             "email": veterinarian.email,
-            "phoneNumber": veterinarian.phone_number,
-            "phoneCountryCode": veterinarian.phone_country_code,
-            "idCedulaProfissional": veterinarian.id_cedula_profissional
+            "phoneNumber": veterinarian.phoneNumber,
+            "phoneCountryCode": veterinarian.phoneCountryCode,
+            "idCedulaProfissional": veterinarian.idCedulaProfissional
             }), 200
 
     except Exception as e:
@@ -104,23 +102,23 @@ def get_veterinarianById(id):
 @veterinarians_bp.route('/veterinarian/<int:id>', methods=['PUT'])
 def update_veterinarian(id):
     try:
-        # Retrieve the client by ID
+
         veterinarian = Veterinarian.query.get(id)
 
         if not veterinarian:
             return jsonify({"error": "Client not found"}), 404
 
-        # Get the new data from the request
+
         data = request.get_json()
 
-        # Update the fields, if they are provided in the request
+
         if 'name' in data:
             veterinarian.name = data['name']
 
         if 'email' in data:
             email = data.get('email')
 
-            # Validate the email using email-validator
+            
             try:
                 validate_email(email)
             except EmailNotValidError as e:
@@ -129,38 +127,38 @@ def update_veterinarian(id):
             veterinarian.email = email
 
 
-        if 'phone_number' in data:
-            phone_number = data.get('phone_number')
-        if 'phone_country_code' in data:
-            phone_country_code = data.get('phone_country_code')
+        if 'phoneNumber' in data:
+            phoneNumber = data.get('phoneNumber')
+        if 'phoneCountryCode' in data:
+            phoneCountryCode = data.get('phoneCountryCode')
         else:
-            phone_country_code = veterinarian.phone_country_code
+            phoneCountryCode = veterinarian.phoneCountryCode
         
         try:
-            full_number = phonenumbers.parse(phone_number, phone_country_code)
+            full_number = phonenumbers.parse(phoneNumber, phoneCountryCode)
             if not phonenumbers.is_valid_number(full_number):
                 return jsonify({"error": "Invalid phone number"}), 400
         except phonenumbers.phonenumberutil.NumberParseException:
             return jsonify({"error": "Invalid phone number format"}), 400
         
-        veterinarian.phoneNumber = phone_number
-        veterinarian.phoneNumber = phone_country_code
+        veterinarian.phoneNumber = phoneNumber
+        veterinarian.phoneNumber = phoneCountryCode
 
 
-        if 'id_cedula_profissional' in data:
-            veterinarian.id_cedula_profissional = data.get('id_cedula_profissional')
+        if 'idCedulaProfissional' in data:
+            veterinarian.idCedulaProfissional = data.get('idCedulaProfissional')
 
         
-        # Commit the changes to the database
+
         db.session.commit()
 
         return jsonify({
             "idVeterinary": veterinarian.id,
             "name": veterinarian.name,
             "email": veterinarian.email,
-            "phoneNumber": veterinarian.phone_number,
-            "phoneCountryCode": veterinarian.phone_country_code,
-            "idCedulaProfissional": veterinarian.id_cedula_profissional
+            "phoneNumber": veterinarian.phoneNumber,
+            "phoneCountryCode": veterinarian.phoneCountryCode,
+            "idCedulaProfissional": veterinarian.idCedulaProfissional
         }), 200
 
     except Exception as e:

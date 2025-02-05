@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, url_for
-from lib.models import Client, ClientsHasHorses, Horse, db
+from lib.models import Client, ClientHorse, Horse, db
 import phonenumbers
 from email_validator import validate_email, EmailNotValidError
 
@@ -12,35 +12,33 @@ def add_client():
         data = request.get_json()
         name = data.get('name')
         email = data.get('email')
-        phone_number = data.get('phone_number')
-        phone_country_code = data.get('phone_country_code')
+        phoneNumber = data.get('phoneNumber')
+        phoneCountryCode = data.get('phoneCountryCode')
         
         if not name:
             return jsonify({"error": "Client name is required"}), 400
         
-        if phone_number and not phone_country_code:
+        if phoneNumber and not phoneCountryCode:
             return jsonify({"error": "Phone number and country code are required"}), 400
         
-        if phone_number:
+        if phoneNumber:
             try:
-                full_number = phonenumbers.parse(phone_number, phone_country_code)
+                full_number = phonenumbers.parse(phoneNumber, phoneCountryCode)
                 if not phonenumbers.is_valid_number(full_number):
                     return jsonify({"error": "Invalid phone number"}), 400
             except phonenumbers.phonenumberutil.NumberParseException:
                 return jsonify({"error": "Invalid phone number format"}), 400
         
         if email:
-            # Validate the email using email-validator
             try:
                 validate_email(email)
             except EmailNotValidError as e:
                 return jsonify({"error": f"Invalid email format: {str(e)}"}), 400
         
-        # Store the client in the database
         client = Client(
             name=name,
-            phone_number=phone_number,
-            phone_country_code=phone_country_code,
+            phoneNumber=phoneNumber,
+            phoneCountryCode=phoneCountryCode,
             email=email
         )
         db.session.add(client)
@@ -49,8 +47,8 @@ def add_client():
         return jsonify({
             "idClient": client.id,
             "name": client.name,
-            "phoneNumber": client.phone_number,
-            "phoneCountryCode": client.phone_country_code,
+            "phoneNumber": client.phoneNumber,
+            "phoneCountryCode": client.phoneCountryCode,
             "email": client.email
         }), 201
 
@@ -64,7 +62,7 @@ def get_clients():
         clients = Client.query.all() #cria-se uma lista de objetos da classe Client
 
         clients_list = [{"idClient": client.id, "name": client.name, "email": client.email,
-                         "phoneNumber": client.phone_number, "phoneCountryCode": client.phone_country_code}
+                         "phoneNumber": client.phoneNumber, "phoneCountryCode": client.phoneCountryCode}
                         for client in clients]
         return jsonify(clients_list), 200
         
@@ -76,7 +74,7 @@ def get_clients():
 @clients_bp.route('/client/<int:id>', methods=['GET'])
 def get_clientById(id):
     try:
-        # Retrieve the client by ID
+
         client = Client.query.get(id)
         
         if not client:
@@ -87,8 +85,8 @@ def get_clientById(id):
                 "idClient": client.id,
                 "name": client.name,
                 "email": client.email,
-                "phoneNumber": client.phone_number,
-                "phoneCountryCode": client.phone_country_code
+                "phoneNumber": client.phoneNumber,
+                "phoneCountryCode": client.phoneCountryCode
             }), 200
 
     except Exception as e:
@@ -123,22 +121,22 @@ def update_client(id):
             client.email = email
 
 
-        if 'phone_number' in data:
-            phone_number = data.get('phone_number')
-        if 'phone_country_code' in data:
-            phone_country_code = data.get('phone_country_code')
+        if 'phoneNumber' in data:
+            phoneNumber = data.get('phoneNumber')
+        if 'phoneCountryCode' in data:
+            phoneCountryCode = data.get('phoneCountryCode')
         else:
-            phone_country_code = client.phone_country_code
+            phoneCountryCode = client.phoneCountryCode
         
         try:
-            full_number = phonenumbers.parse(phone_number, phone_country_code)
+            full_number = phonenumbers.parse(phoneNumber, phoneCountryCode)
             if not phonenumbers.is_valid_number(full_number):
                 return jsonify({"error": "Invalid phone number"}), 400
         except phonenumbers.phonenumberutil.NumberParseException:
             return jsonify({"error": "Invalid phone number format"}), 400
         
-        client.phoneNumber = phone_number
-        client.phoneNumber = phone_country_code
+        client.phoneNumber = phoneNumber
+        client.phoneNumber = phoneCountryCode
 
 
         
@@ -149,8 +147,8 @@ def update_client(id):
             "idClient": client.id,
             "name": client.name,
             "email": client.email,
-            "phoneNumber": client.phone_number,
-            "phoneCountryCode": client.phone_country_code
+            "phoneNumber": client.phoneNumber,
+            "phoneCountryCode": client.phoneCountryCode
         }), 200
 
     except Exception as e:
@@ -172,27 +170,27 @@ def delete_client(id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
-@clients_bp.route('/client/<int:client_id>/horses/<int:horse_id>', methods=['POST'])
-def add_horse_to_client(client_id, horse_id):
+@clients_bp.route('/client/<int:client_id>/horses/<int:horseId>', methods=['POST'])
+def add_horse_to_client(client_id, horseId):
     try:
-        # Check if client exists
+
         client = Client.query.get(client_id)
         if not client:
             return jsonify({"error": "Client not found"}), 404
 
-        # Check if horse exists
-        horse = Horse.query.get(horse_id)
+
+        horse = Horse.query.get(horseId)
         if not horse:
             return jsonify({"error": "Horse not found"}), 404
 
-        # Check if the relationship already exists
-        existing_relation = ClientsHasHorses.query.filter_by(client_id=client_id, horse_id=horse_id).first()
+
+        existing_relation = ClientsHasHorses.query.filter_by(client_id=client_id, horseId=horseId).first()
         if existing_relation:
             return jsonify({"message": "Client already associated with this horse"}), 400
 
-        # Add horse to client
+
         is_owner = request.json.get("isClientHorseOwner", False)  # Default is False
-        client_horse_relation = ClientsHasHorses(client_id=client_id, horse_id=horse_id, is_client_horse_owner=is_owner)
+        client_horse_relation = ClientsHasHorses(client_id=client_id, horseId=horseId, is_client_horse_owner=is_owner)
 
         db.session.add(client_horse_relation)
         db.session.commit()
@@ -222,10 +220,10 @@ def get_client_horses(client_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
-@clients_bp.route('/client/<int:client_id>/horses/<int:horse_id>', methods=['DELETE'])
-def remove_horse_from_client(client_id, horse_id):
+@clients_bp.route('/client/<int:client_id>/horses/<int:horseId>', methods=['DELETE'])
+def remove_horse_from_client(client_id, horseId):
     try:
-        relation = ClientsHasHorses.query.filter_by(client_id=client_id, horse_id=horse_id).first()
+        relation = ClientsHasHorses.query.filter_by(client_id=client_id, horseId=horseId).first()
         if not relation:
             return jsonify({"error": "Client is not associated with this horse"}), 404
 
