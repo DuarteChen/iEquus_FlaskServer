@@ -66,8 +66,8 @@ class Client(db.Model):
 class ClientHorse(db.Model):
     __tablename__ = 'Clients_has_horses'
     
-    client_id = db.Column('Clients_idClient', db.Integer, db.ForeignKey('Clients.idClient'), primary_key=True)
-    horse_id = db.Column('horses_idHorse', db.Integer, db.ForeignKey('Horses.idHorse'), primary_key=True)
+    clientId = db.Column('Clients_idClient', db.Integer, db.ForeignKey('Clients.idClient'), primary_key=True)
+    horseId = db.Column('horses_idHorse', db.Integer, db.ForeignKey('Horses.idHorse'), primary_key=True)
     isClientHorseOwner = db.Column(db.Boolean, nullable=False)
 
 class Measure(db.Model):

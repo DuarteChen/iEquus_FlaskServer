@@ -1,6 +1,6 @@
 from flask import Flask
-from lib.config import Config
-from lib.models import db
+from flask_migrate import Migrate
+from lib.models import db  # Import the db object from lib.models
 from lib.routes.clients_routes import clients_bp
 from lib.routes.horses_routes import horses_bp
 from lib.routes.veterinarians_routes import veterinarians_bp
@@ -9,10 +9,14 @@ from lib.routes.measures_routes import measures_bp
 
 def create_app():
     app = Flask(__name__)
-    app.config.from_object(Config)
-    
-    # Initialize extensions
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:a22203153@localhost/iEquusDB'
+    #app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:a22203153@iEquus-mysql/iEquusDB' # to use with docker
+
+    # Initialize the db instance with app
     db.init_app(app)
+
+    # Initialize Migrate with the app and db
+    migrate = Migrate(app, db)
     
     # Register blueprints
     app.register_blueprint(clients_bp)

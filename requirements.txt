@@ -7,3 +7,5 @@ Pillow
 uuid
 phonenumbers
 email-validator
+PyPDF2
+reportlab

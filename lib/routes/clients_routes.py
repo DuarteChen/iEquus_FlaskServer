@@ -170,28 +170,31 @@ def delete_client(id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
-@clients_bp.route('/client/<int:client_id>/horses/<int:horseId>', methods=['POST'])
-def add_horse_to_client(client_id, horseId):
+@clients_bp.route('/client/<int:clientId_arg>/horse/<int:horseId_arg>', methods=['POST'])
+def add_horse_to_client(clientId_arg, horseId_arg):
     try:
-
-        client = Client.query.get(client_id)
+        # Get the client from the database
+        client = Client.query.get(clientId_arg)
         if not client:
             return jsonify({"error": "Client not found"}), 404
 
-
-        horse = Horse.query.get(horseId)
+        # Get the horse from the database
+        horse = Horse.query.get(horseId_arg)
         if not horse:
             return jsonify({"error": "Horse not found"}), 404
 
-
-        existing_relation = ClientsHasHorses.query.filter_by(client_id=client_id, horseId=horseId).first()
+        # Check if the relation already exists
+        existing_relation = ClientHorse.query.filter_by(clientId=clientId_arg, horseId=horseId_arg).first()
         if existing_relation:
             return jsonify({"message": "Client already associated with this horse"}), 400
 
+        # Get 'isClientHorseOwner' from the request's JSON payload
+        isClientHorseOwner = request.json.get('isClientHorseOwner', False)  # Default to False if not provided
 
-        is_owner = request.json.get("isClientHorseOwner", False)  # Default is False
-        client_horse_relation = ClientsHasHorses(client_id=client_id, horseId=horseId, is_client_horse_owner=is_owner)
+        # Create the association in the ClientHorse table
+        client_horse_relation = ClientHorse(clientId=clientId_arg, horseId=horseId_arg, isClientHorseOwner=isClientHorseOwner)
 
+        # Add to the session and commit
         db.session.add(client_horse_relation)
         db.session.commit()
 
@@ -199,31 +202,75 @@ def add_horse_to_client(client_id, horseId):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    
+
 @clients_bp.route('/client/<int:client_id>/horses', methods=['GET'])
 def get_client_horses(client_id):
     try:
         client = Client.query.get(client_id)
         if not client:
             return jsonify({"error": "Client not found"}), 404
+        
+        horses_list = []
+        for horse in client.horses:
+            # Query the ClientHorse table to get the relation for each horse
+            relation = ClientHorse.query.filter_by(clientId=client_id, horseId=horse.id).first()
 
-        horses_list = [{
-            "idHorse": relation.horse.id,
-            "name": relation.horse.name,
-            "profilePicturePath": url_for('static', filename=f'images/horse_profile/{relation.horse.profile_picture_path}', _external=True) if relation.horse.profile_picture_path else None,
-            "birthDate": relation.horse.birth_date,
-            "isOwner": relation.is_client_horse_owner
-        } for relation in client.horses]
+            # Only add to the list if the relation exists
+            if relation:
+                horses_list.append({
+                    "idHorse": horse.id,
+                    "name": horse.name,
+                    "profilePicturePath": url_for('static', filename=f'images/horse_profile/{horse.profilePicturePath}', _external=True) if horse.profilePicturePath else None,
+                    "birthDate": horse.birthDate,
+                    "isOwner": relation.isClientHorseOwner
+                })
 
         return jsonify(horses_list), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
+
+@clients_bp.route('/client/<int:clientId_arg>/horse/<int:horseId_arg>', methods=['PUT'])
+def update_horse_to_client(clientId_arg, horseId_arg):
+    try:
+        # Get the client from the database
+        client = Client.query.get(clientId_arg)
+        if not client:
+            return jsonify({"error": "Client not found"}), 404
+
+        # Get the horse from the database
+        horse = Horse.query.get(horseId_arg)
+        if not horse:
+            return jsonify({"error": "Horse not found"}), 404
+
+        # Check if the relation exists
+        existing_relation = ClientHorse.query.filter_by(clientId=clientId_arg, horseId=horseId_arg).first()
+        if not existing_relation:
+            return jsonify({"message": "Client is not associated with this horse"}), 400
+
+        # Get the updated 'isClientHorseOwner' from the request's JSON payload
+        isClientHorseOwner = request.json.get('isClientHorseOwner')
+        if isClientHorseOwner is None:  # Make sure the value is provided
+            return jsonify({"message": "Value 'isClientHorseOwner' needed to proceed"}), 400
+
+        # Update the existing relation's 'isClientHorseOwner' value
+        existing_relation.isClientHorseOwner = isClientHorseOwner
+
+        # Commit the update to the database
+        db.session.commit()
+
+        return jsonify({"message": "Horse's relation with client successfully updated"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+    
 @clients_bp.route('/client/<int:client_id>/horses/<int:horseId>', methods=['DELETE'])
 def remove_horse_from_client(client_id, horseId):
     try:
-        relation = ClientsHasHorses.query.filter_by(client_id=client_id, horseId=horseId).first()
+        relation = ClientHorse.query.filter_by(clientId=client_id, horseId=horseId).first()
         if not relation:
             return jsonify({"error": "Client is not associated with this horse"}), 404
 
