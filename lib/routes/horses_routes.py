@@ -203,6 +203,11 @@ def update_horse(id):
             file = request.files['photo']
             filename = secure_filename(file.filename)
             image = Image.open(file)
+
+            # Handle picture update
+            # Check if there is an old picture to delete
+            if horse.profilePicturePath and os.path.exists(horse.profilePicturePath):
+                os.remove(horse.profilePicturePath)  # Delete the old picture
             
             # Generate a unique file name using UUID
             profile_picture_filename = f"{horse.id}_profile_{uuid4()}.webp"
@@ -216,6 +221,12 @@ def update_horse(id):
 
         # Handle limb pictures (if uploaded)
         if 'pictureRightFront' in request.files:
+
+            # Handle picture update
+            # Check if there is an old picture to delete
+            if horse.pictureRightFrontPath and os.path.exists(horse.pictureRightFrontPath):
+                os.remove(horse.pictureRightFrontPath)  # Delete the old picture
+
             file = request.files['pictureRightFront']
             filename = secure_filename(file.filename)
             image = Image.open(file)
@@ -225,6 +236,11 @@ def update_horse(id):
             horse.pictureRightFrontPath = picture_right_front_filename
         
         if 'pictureLeftFront' in request.files:
+            # Handle picture update
+            # Check if there is an old picture to delete
+            if horse.pictureLeftFrontPath and os.path.exists(horse.pictureLeftFrontPath):
+                os.remove(horse.pictureLeftFrontPath)  # Delete the old picture
+
             file = request.files['pictureLeftFront']
             filename = secure_filename(file.filename)
             image = Image.open(file)
@@ -234,6 +250,12 @@ def update_horse(id):
             horse.pictureLeftFrontPath = picture_left_front_filename
         
         if 'pictureRightHind' in request.files:
+            # Handle picture update
+            # Check if there is an old picture to delete
+            if horse.pictureRightHindPath and os.path.exists(horse.pictureRightHindPath):
+                os.remove(horse.pictureRightHindPath)  # Delete the old picture
+
+            
             file = request.files['pictureRightHind']
             filename = secure_filename(file.filename)
             image = Image.open(file)
@@ -243,6 +265,11 @@ def update_horse(id):
             horse.pictureRightHindPath = picture_right_hind_filename
         
         if 'pictureLeftHind' in request.files:
+            # Handle picture update
+            # Check if there is an old picture to delete
+            if horse.pictureLeftHindPath and os.path.exists(horse.pictureLeftHindPath):
+                os.remove(horse.pictureLeftHindPath)  # Delete the old picture
+
             file = request.files['pictureLeftHind']
             filename = secure_filename(file.filename)
             image = Image.open(file)

@@ -10,6 +10,7 @@ from reportlab.lib.pagesizes import letter
 import subprocess
 
 appointments_bp = Blueprint('appointments', __name__)
+
 project_dir = os.getcwd()  # This will give you the current working directory
 cbcFolder = os.path.join(project_dir, 'lib','static', 'appointments', 'cbc')
 
@@ -232,3 +233,4 @@ def delete_appointment(appointmentId):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    

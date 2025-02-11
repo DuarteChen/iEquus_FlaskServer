@@ -9,3 +9,4 @@ phonenumbers
 email-validator
 PyPDF2
 reportlab
+requests
