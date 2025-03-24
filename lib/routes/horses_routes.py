@@ -2,8 +2,9 @@ import os
 from datetime import datetime
 from uuid import uuid4
 from flask import Blueprint, request, jsonify, url_for
+from sqlalchemy import false
 from werkzeug.utils import secure_filename
-from lib.models import Horse, db
+from lib.models import ClientHorse, Horse, db
 from PIL import Image
 
 
@@ -70,13 +71,18 @@ def get_horseById(id):
 @horses_bp.route('/horses', methods=['POST'])
 def add_horse():
     try:
-        
-        birth_date_str = request.form.get('birthDate') #TODO - Pode ser removida esta linha, depois de ligar com o flutter
-        expected_format = "%Y-%m-%d"
-        try:
-            birthDate = datetime.strptime(birth_date_str, expected_format)
-        except ValueError:
-            return jsonify({"error": "Invalid date format. Please use YYYY-MM-DD."}), 400
+
+
+        # Retrieve the 'birthDate' from the request
+        birth_date_str = request.form.get('birthDate')
+
+        # Check if the birthDate is provided
+        if birth_date_str:
+            # Convert the string to a datetime object
+            birth_date = datetime.strptime(birth_date_str, '%Y-%m-%d')
+        else:
+            # Set birth_date to None if not provided
+            birth_date = None
 
 
 
@@ -88,7 +94,7 @@ def add_horse():
         horse = Horse(
             name=name,
             profilePicturePath=None,
-            birthDate=birthDate,
+            birthDate=birth_date,
             pictureRightFrontPath=None,
             pictureLeftFrontPath=None,
             pictureRightHindPath=None,
@@ -323,6 +329,34 @@ def delete_horse(id):
         db.session.commit()
 
         return jsonify({"message": "Horse deleted successfully"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+@horses_bp.route('/horse/<int:horse_id>/clients', methods=['GET'])
+def get_horse_clients(horse_id):
+    try:
+        horse = Horse.query.get(horse_id)
+        if not horse:
+            return jsonify({"error": "Horse not found in the Database"}), 404
+        
+        clients_list = []
+        for client in horse.clients:
+            # Query the ClientHorse table to get the relation for each horse
+            relation = ClientHorse.query.filter_by(horseId=horse_id, clientId=client.id).first() #isClientHorseOwner=1 - adicionar se apenas owners
+
+            # Only add to the list if the relation exists
+            if relation:
+                clients_list.append({
+                    "idClient": client.id,
+                    "name": client.name,
+                    "email": client.phoneNumber,
+                    "phoneCountryCode": client.phoneCountryCode,
+                    "phoneNumber": client.phoneNumber,
+                    "isOwner": relation.isClientHorseOwner
+                })
+
+        return jsonify(clients_list), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

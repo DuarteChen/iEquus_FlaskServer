@@ -1,3 +1,4 @@
+import random
 from flask import Blueprint, json, request, jsonify
 import requests
 from lib.models import Measure, db
@@ -7,16 +8,17 @@ import os
 measures_bp = Blueprint('measures', __name__)
 
 project_dir = os.getcwd()
-algorithm_PicturesFolder = os.path.join(project_dir, 'lib','static', 'measures')
+algorithm_PicturesFolder = os.path.join(project_dir, 'lib','static', 'measures')      
 
 # Add a measure
 @measures_bp.route('/measures', methods=['POST'])
 def add_measure():
     try:
-        # Get form data
-        veterinarianId = request.form.get('veterinarianId')
+        #non nullable
         horseId = request.form.get('horseId')
         date = request.form.get('date')
+        # Get form data
+        veterinarianId = request.form.get('veterinarianId')
         appointmentId = request.form.get('appointmentId')
         userBW = request.form.get('userBW')
         userBCS = request.form.get('userBCS')
@@ -32,8 +34,6 @@ def add_measure():
             date=date,
             appointmentId=appointmentId,
             coordinates=coordinates,
-            userBW=userBW,
-            userBCS=userBCS,
         )
 
         db.session.add(measure)
@@ -41,9 +41,11 @@ def add_measure():
 
         # Handle coordinates and picture if both are provided
         if coordinates and 'picturePath' in request.files:
-            results = forward_coordinates(coordinates)
-            measure.algorithmBW = results.get('algorithmBW_result', 0)
-            measure.algorithmBCS = results.get('algorithmBCS_result', 0)
+            #results = forward_coordinates(coordinates)
+            bw = random.randint(500, 800)
+            bcs = random.randint(3, 5)
+            measure.algorithmBW = bw #results.get('algorithmBW_result', 0)
+            measure.algorithmBCS = bcs#bcs #results.get('algorithmBCS_result', 0)
 
             # Handle picture upload
             file = request.files['picturePath']
@@ -57,7 +59,7 @@ def add_measure():
             measure.picturePath = algorithm_PicturesPath
 
         db.session.commit()
-        return jsonify({'message': f"Measure added successfully with Measure ID: {measure.id}"}), 201
+        return jsonify({'measureID': measure.id, 'algorithmBCS': measure.algorithmBCS, 'algorithmBW': measure.algorithmBW}), 201
 
     except Exception as e:
         db.session.rollback()  # Rollback on error

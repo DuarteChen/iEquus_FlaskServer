@@ -1,4 +1,4 @@
-from email_validator import EmailNotValidError, ValidatedEmail
+from email_validator import EmailNotValidError
 from flask import Blueprint, request, jsonify
 from email_validator import validate_email, EmailNotValidError
 import phonenumbers
