@@ -10,3 +10,9 @@ email-validator
 PyPDF2
 reportlab
 requests
+Flask-Bcrypt
+Flask-JWT-Extended
+python-dotenv
+bcrypt
+flask-bcrypt
+flask-cors
