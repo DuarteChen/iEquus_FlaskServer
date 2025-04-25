@@ -115,10 +115,15 @@ def get_current_veterinarian():
         try:
             vet_id = int(current_user_id)
         except (ValueError, TypeError):
-             logger.error(f"Invalid identity type in JWT token: {current_user_id}")
-             return jsonify({"error": "Invalid user identity in token"}), 401
+            logger.error(f"Invalid identity type in JWT token: {current_user_id}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
 
-        veterinarian = Veterinarian.query.get_or_404(vet_id, description=f"Veterinarian with id {vet_id} not found")
+        veterinarian = Veterinarian.query.get_or_404(
+            vet_id,
+            description=f"Veterinarian with id {vet_id} not found"
+        )
+
+        hospital = veterinarian.hospital
 
         return jsonify({
             "idVeterinary": veterinarian.id,
@@ -126,12 +131,22 @@ def get_current_veterinarian():
             "email": veterinarian.email,
             "phoneNumber": veterinarian.phoneNumber,
             "phoneCountryCode": veterinarian.phoneCountryCode,
-            "idCedulaProfissional": veterinarian.idCedulaProfissional
-            }), 200
+            "idCedulaProfissional": veterinarian.idCedulaProfissional,
+            "hospital": {
+                "id": hospital.id,
+                "name": hospital.name,
+                "streetName": hospital.streetName,
+                "streetNumber": hospital.streetNumber,
+                "postalCode": hospital.postalCode,
+                "city": hospital.city,
+                "country": hospital.country,
+                "optionalAddressField": hospital.optionalAddressField
+            }
+        }), 200
 
     except NotFound as e:
-         logger.warning(f"Veterinarian not found for ID from token {current_user_id}: {e}")
-         return jsonify({"error": str(e)}), 404
+        logger.warning(f"Veterinarian not found for ID from token {current_user_id}: {e}")
+        return jsonify({"error": str(e)}), 404
     except Exception as e:
         logger.exception(f"Error retrieving veterinarian details for ID {current_user_id} from token.")
         return jsonify({"error": "An unexpected server error occurred"}), 500
@@ -311,8 +326,9 @@ def register_veterinarian():
         idCedulaProfissional = request.form.get('idCedulaProfissional')
         phoneNumber = request.form.get('phoneNumber')
         phoneCountryCode = request.form.get('phoneCountryCode')
+        hospitalId = request.form.get('hospitalId')
 
-        required_fields = {'name': name, 'email': email, 'password': password, 'idCedulaProfissional': idCedulaProfissional}
+        required_fields = {'name': name, 'email': email, 'password': password, 'idCedulaProfissional': idCedulaProfissional, 'hospitalId': hospitalId}
         missing_or_empty_fields = [key for key, value in required_fields.items() if not value or str(value).strip() == ""]
         if missing_or_empty_fields:
             return jsonify({"error": f"Missing or empty required form fields: {', '.join(missing_or_empty_fields)}"}), 400
@@ -352,7 +368,8 @@ def register_veterinarian():
             email=email_stripped,
             phoneNumber=final_phone_number,
             phoneCountryCode=final_country_code,
-            idCedulaProfissional=str(idCedulaProfissional).strip()
+            idCedulaProfissional=str(idCedulaProfissional).strip(),
+            hospitalId=hospitalId
         )
         veterinarian.set_password(password)
 
@@ -368,7 +385,8 @@ def register_veterinarian():
                 "email": veterinarian.email,
                 "idCedulaProfissional": veterinarian.idCedulaProfissional,
                 "phoneNumber": veterinarian.phoneNumber,
-                "phoneCountryCode": veterinarian.phoneCountryCode
+                "phoneCountryCode": veterinarian.phoneCountryCode,
+                "hospitalId": veterinarian.hospitalId
             }
         }), 201
 

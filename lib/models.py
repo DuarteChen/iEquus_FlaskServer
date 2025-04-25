@@ -6,6 +6,48 @@ from sqlalchemy.sql import func
 bcrypt = Bcrypt()
 db = SQLAlchemy()
 
+class Hospital(db.Model):
+    __tablename__ = 'Hospitals'
+
+    id = db.Column('idHospitals', db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(255), nullable=False)
+    streetName = db.Column(db.String(255), nullable=False)
+    streetNumber = db.Column(db.String(45), nullable=False)
+    postalCode = db.Column(db.String(45), nullable=False)
+    city = db.Column(db.String(45), nullable=False)
+    country = db.Column(db.String(45), nullable=False)
+    optionalAddressField = db.Column(db.String(45), nullable=True)
+
+    veterinarians = db.relationship('Veterinarian', backref='hospital', cascade="all, delete-orphan")
+
+
+class Veterinarian(db.Model):
+    __tablename__ = 'Veterinarians'
+
+    id = db.Column('idVeterinarian', db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(255), nullable=True)
+    email = db.Column(db.String(255), nullable=False)
+    phoneNumber = db.Column(db.String(20), nullable=True)
+    phoneCountryCode = db.Column(db.String(10), nullable=True)
+    password = db.Column(db.String(255), nullable=True)
+    idCedulaProfissional = db.Column(db.String(40), nullable=False)
+    hospitalId = db.Column('Hospitals_idHospitals', db.Integer, db.ForeignKey('Hospitals.idHospitals'), nullable=False)
+
+    appointments = db.relationship('Appointment', backref='veterinarian', cascade="all, delete-orphan")
+    measures = db.relationship('Measure', backref='veterinarian', cascade="all, delete-orphan")
+
+    def set_password(self, password):
+        if password:
+            self.password = bcrypt.generate_password_hash(password).decode('utf-8')
+        else:
+            self.password = None
+
+    def check_password(self, password):
+        if not self.password or not password:
+            return False
+        return bcrypt.check_password_hash(self.password, password)
+
+
 class Horse(db.Model):
     __tablename__ = 'Horses'
 
@@ -22,30 +64,6 @@ class Horse(db.Model):
     measures = db.relationship('Measure', backref='horse', cascade="all, delete-orphan")
     clients = db.relationship('Client', secondary='Clients_has_horses', back_populates='horses')
 
-class Veterinarian(db.Model):
-    __tablename__ = 'Veterinarians'
-
-    id = db.Column('idVeterinarian', db.Integer, primary_key=True, autoincrement=True)
-    name = db.Column(db.String(255), nullable=True)
-    email = db.Column(db.String(255), nullable=False)
-    phoneNumber = db.Column(db.String(20), nullable=True)
-    phoneCountryCode = db.Column(db.String(10), nullable=True)
-    password = db.Column(db.String(255), nullable=True)
-    idCedulaProfissional = db.Column(db.String(40), nullable=False)
-
-    appointments = db.relationship('Appointment', backref='veterinarian', cascade="all, delete-orphan")
-    measures = db.relationship('Measure', backref='veterinarian', cascade="all, delete-orphan")
-
-    def set_password(self, password):
-        if password:
-            self.password = bcrypt.generate_password_hash(password).decode('utf-8')
-        else:
-            self.password = None
-
-    def check_password(self, password):
-        if not self.password or not password:
-            return False
-        return bcrypt.check_password_hash(self.password, password)
 
 class Appointment(db.Model):
     __tablename__ = 'Appointments'
@@ -68,6 +86,7 @@ class Appointment(db.Model):
 
     measures = db.relationship('Measure', backref='appointment', cascade="all, delete-orphan")
 
+
 class Client(db.Model):
     __tablename__ = 'Clients'
 
@@ -79,12 +98,14 @@ class Client(db.Model):
 
     horses = db.relationship('Horse', secondary='Clients_has_horses', back_populates='clients')
 
+
 class ClientHorse(db.Model):
     __tablename__ = 'Clients_has_horses'
 
     clientId = db.Column('Clients_idClient', db.Integer, db.ForeignKey('Clients.idClient'), primary_key=True)
     horseId = db.Column('horses_idHorse', db.Integer, db.ForeignKey('Horses.idHorse'), primary_key=True)
     isClientHorseOwner = db.Column(db.Boolean, nullable=False)
+
 
 class Measure(db.Model):
     __tablename__ = 'Measures'
