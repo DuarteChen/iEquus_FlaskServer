@@ -1,0 +1,25 @@
+# Ignore static files
+/static/
+
+# Ignore VSCode settings
+/.vscode/
+
+# Ignore Python cache files
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore migrations
+migrations/
+/migrations/*.pyc
+/migrations/*.pyo
+
+# Ignore environment files
+.env
+.venv/
+venv/
+
+# Ignore dependency folders 
+/node_modules/  # If using npm/yarn in your project
+/lib/

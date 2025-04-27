@@ -1,114 +1,124 @@
+from flask_bcrypt import Bcrypt
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from sqlalchemy.dialects.mysql import JSON
+from sqlalchemy.sql import func
 
+bcrypt = Bcrypt()
 db = SQLAlchemy()
 
-class Horse(db.Model):
-    __tablename__ = 'Horses'
+class Hospital(db.Model):
+    __tablename__ = 'Hospitals'
 
-    id = db.Column('idHorse', db.Integer, primary_key=True, autoincrement=True)
-    name = db.Column('name', db.String(255), nullable=False)
-    profile_picture_path = db.Column('profilePicturePath', db.String(255), nullable=True)
-    birth_date = db.Column('birthDate', db.DateTime, nullable=True)
-    picture_right_front_path = db.Column('pictureRightFrontPath', db.String(255), nullable=True)
-    picture_left_front_path = db.Column('pictureLeftFrontPath', db.String(255), nullable=True)
-    picture_right_hind_path = db.Column('pictureRightHindPath', db.String(255), nullable=True)
-    picture_left_hind_path = db.Column('pictureLeftHindPath', db.String(255), nullable=True)
+    id = db.Column('idHospitals', db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(255), nullable=False)
+    streetName = db.Column(db.String(255), nullable=False)
+    streetNumber = db.Column(db.String(45), nullable=False)
+    postalCode = db.Column(db.String(45), nullable=False)
+    city = db.Column(db.String(45), nullable=False)
+    country = db.Column(db.String(45), nullable=False)
+    optionalAddressField = db.Column(db.String(45), nullable=True)
 
-    clients = db.relationship('ClientsHasHorses', back_populates='horse', cascade="all, delete-orphan")
-    appointments = db.relationship('Appointment', back_populates='horse', cascade="all, delete-orphan")
-
-
-class Client(db.Model):
-    __tablename__ = 'Clients'
-
-    id = db.Column('idClient', db.Integer, primary_key=True, autoincrement=True)
-    name = db.Column('name', db.String(255), nullable=False)
-    email = db.Column('email', db.String(255), nullable=True)
-    phone_number = db.Column('phoneNumber', db.String(20), nullable=True)
-    phone_country_code = db.Column('phoneCountryCode', db.String(10), nullable=True)
-
-    horses = db.relationship('ClientsHasHorses', back_populates='client', cascade="all, delete-orphan")
-
-
-class ClientsHasHorses(db.Model):
-    __tablename__ = 'Clients_has_horses'
-
-    client_id = db.Column('Clients_idClient', db.Integer, db.ForeignKey('Clients.idClient'), primary_key=True)
-    horse_id = db.Column('horses_idHorse', db.Integer, db.ForeignKey('Horses.idHorse'), primary_key=True)
-    is_client_horse_owner = db.Column('isClientHorseOwner', db.Boolean, nullable=False)
-
-    client = db.relationship('Client', back_populates='horses')
-    horse = db.relationship('Horse', back_populates='clients')
+    veterinarians = db.relationship('Veterinarian', backref='hospital', cascade="all, delete-orphan")
 
 
 class Veterinarian(db.Model):
     __tablename__ = 'Veterinarians'
 
-    id = db.Column('idVeterinary', db.Integer, primary_key=True, autoincrement=True)
-    name = db.Column('name', db.String(255), nullable=False)
-    email = db.Column('email', db.String(255), nullable=True)
-    phone_number = db.Column('phoneNumber', db.String(20), nullable=True)
-    phone_country_code = db.Column('phoneCountryCode', db.String(10), nullable=True)
-    password = db.Column('password', db.String(255), nullable=True)
-    id_cedula_profissional = db.Column('idCedulaProfissional', db.String(40), nullable=False)
+    id = db.Column('idVeterinarian', db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(255), nullable=True)
+    email = db.Column(db.String(255), nullable=False)
+    phoneNumber = db.Column(db.String(20), nullable=True)
+    phoneCountryCode = db.Column(db.String(10), nullable=True)
+    password = db.Column(db.String(255), nullable=True)
+    idCedulaProfissional = db.Column(db.String(40), nullable=False)
+    hospitalId = db.Column('Hospitals_idHospitals', db.Integer, db.ForeignKey('Hospitals.idHospitals'), nullable=False)
 
-    appointments = db.relationship('Appointment', back_populates='veterinarian', cascade="all, delete-orphan")
+    appointments = db.relationship('Appointment', backref='veterinarian', cascade="all, delete-orphan")
+    measures = db.relationship('Measure', backref='veterinarian', cascade="all, delete-orphan")
+
+    def set_password(self, password):
+        if password:
+            self.password = bcrypt.generate_password_hash(password).decode('utf-8')
+        else:
+            self.password = None
+
+    def check_password(self, password):
+        if not self.password or not password:
+            return False
+        return bcrypt.check_password_hash(self.password, password)
+
+
+class Horse(db.Model):
+    __tablename__ = 'Horses'
+
+    id = db.Column('idHorse', db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(255), nullable=False)
+    profilePicturePath = db.Column(db.String(255), nullable=True)
+    birthDate = db.Column(db.DateTime, nullable=True)
+    pictureRightFrontPath = db.Column(db.String(255), nullable=True)
+    pictureLeftFrontPath = db.Column(db.String(255), nullable=True)
+    pictureRightHindPath = db.Column(db.String(255), nullable=True)
+    pictureLeftHindPath = db.Column(db.String(255), nullable=True)
+
+    appointments = db.relationship('Appointment', backref='horse', cascade="all, delete-orphan")
+    measures = db.relationship('Measure', backref='horse', cascade="all, delete-orphan")
+    clients = db.relationship('Client', secondary='Clients_has_horses', back_populates='horses')
 
 
 class Appointment(db.Model):
     __tablename__ = 'Appointments'
 
     id = db.Column('idAppointment', db.Integer, primary_key=True, autoincrement=True)
-    horse_id = db.Column('horseId', db.Integer, db.ForeignKey('Horses.idHorse'), nullable=False)
-    veterinary_id = db.Column('veterinaryID', db.Integer, db.ForeignKey('Veterinarians.idVeterinary'), nullable=False)
-    lameness_right_front = db.Column('lamenessRightFront', db.Integer, nullable=True)
-    lameness_left_front = db.Column('lamenessLeftFront', db.Integer, nullable=True)
-    lameness_right_hind = db.Column('lamenessRighHind', db.Integer, nullable=True)
-    lameness_left_hind = db.Column('lamenessLeftHind', db.Integer, nullable=True)
+    horseId = db.Column(db.Integer, db.ForeignKey('Horses.idHorse'), nullable=False)
+    veterinarianId = db.Column(db.Integer, db.ForeignKey('Veterinarians.idVeterinarian'), nullable=False)
+    lamenessRightFront = db.Column(db.Integer, nullable=True)
+    lamenessLeftFront = db.Column(db.Integer, nullable=True)
+    lamenessRightHind = db.Column(db.Integer, nullable=True)
+    lamenessLeftHind = db.Column(db.Integer, nullable=True)
+    BPM = db.Column(db.Integer, nullable=True)
+    muscleTensionFrequency = db.Column(db.String(255), nullable=True)
+    muscleTensionStiffness = db.Column(db.String(255), nullable=True)
+    muscleTensionR = db.Column(db.String(255), nullable=True)
+    CBCpath = db.Column(db.String(255), nullable=True)
+    comment = db.Column(db.Text, nullable=True)
+    date = db.Column(db.DateTime, nullable=False, server_default=func.now())
+    ECGtime = db.Column(db.Integer, nullable=True)
 
-    horse = db.relationship('Horse', back_populates='appointments')
-    veterinarian = db.relationship('Veterinarian', back_populates='appointments')
-    measures = db.relationship('Measure', back_populates='appointment', cascade="all, delete-orphan")
-    cbcs = db.relationship('CBC', back_populates='appointment', cascade="all, delete-orphan")
+    measures = db.relationship('Measure', backref='appointment', cascade="all, delete-orphan")
+
+
+class Client(db.Model):
+    __tablename__ = 'Clients'
+
+    id = db.Column('idClient', db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(255), nullable=False)
+    email = db.Column(db.String(255), nullable=True)
+    phoneNumber = db.Column(db.String(20), nullable=True)
+    phoneCountryCode = db.Column(db.String(10), nullable=True)
+
+    horses = db.relationship('Horse', secondary='Clients_has_horses', back_populates='clients')
+
+
+class ClientHorse(db.Model):
+    __tablename__ = 'Clients_has_horses'
+
+    clientId = db.Column('Clients_idClient', db.Integer, db.ForeignKey('Clients.idClient'), primary_key=True)
+    horseId = db.Column('horses_idHorse', db.Integer, db.ForeignKey('Horses.idHorse'), primary_key=True)
+    isClientHorseOwner = db.Column(db.Boolean, nullable=False)
 
 
 class Measure(db.Model):
     __tablename__ = 'Measures'
 
     id = db.Column('idMeasure', db.Integer, primary_key=True, autoincrement=True)
-    vet_appointment = db.Column('vetAppointment', db.Integer, db.ForeignKey('Appointments.idAppointment'), nullable=False)
-    user_bw = db.Column('userBW', db.Integer, nullable=True)
-    algorithm_bw = db.Column('algorithmBW', db.Integer, nullable=True)
-    user_bcs = db.Column('userBCS', db.Integer, nullable=True)
-    algorithm_bcs = db.Column('algorithmBCS', db.Integer, nullable=True)
-    bpm = db.Column('BPM', db.Integer, nullable=True)
-    ecg_time = db.Column('ECGtime', db.String(10), nullable=True)
-    muscle_tension_frequency = db.Column('muscleTensionFrequency', db.String(255), nullable=True)
-    muscle_tension_stiffness = db.Column('muscleTensionStifness', db.String(255), nullable=True)
-    muscle_tension_r = db.Column('muscleTensionR', db.String(255), nullable=True)
-
-    appointment = db.relationship('Appointment', back_populates='measures')
-    pictures = db.relationship('Picture', back_populates='measure', cascade="all, delete-orphan")
-
-
-class Picture(db.Model):
-    __tablename__ = 'Pictures'
-
-    id = db.Column('idPicture', db.Integer, primary_key=True, autoincrement=True)
-    measure_id = db.Column('measureID', db.Integer, db.ForeignKey('Measures.idMeasure'), nullable=False)
-    path = db.Column('path', db.String(255), nullable=False)
-    date = db.Column('date', db.DateTime, nullable=False, default=datetime.utcnow)
-
-    measure = db.relationship('Measure', back_populates='pictures')
-
-
-class CBC(db.Model):
-    __tablename__ = 'CBC'
-
-    id = db.Column('idCBC', db.Integer, primary_key=True, autoincrement=True)
-    vet_appointment = db.Column('vetAppointment', db.Integer, db.ForeignKey('Appointments.idAppointment'), nullable=False)
-    path = db.Column('path', db.String(255), nullable=False)
-    date = db.Column('date', db.DateTime, nullable=False, default=datetime.utcnow)
-    
-    appointment = db.relationship('Appointment', back_populates='cbcs')
+    userBW = db.Column(db.Integer, nullable=True)
+    algorithmBW = db.Column(db.Integer, nullable=True)
+    userBCS = db.Column(db.Integer, nullable=True)
+    algorithmBCS = db.Column(db.Integer, nullable=True)
+    date = db.Column(db.DateTime, nullable=False)
+    coordinates = db.Column(JSON, nullable=True)
+    picturePath = db.Column(db.String(255), nullable=True)
+    favorite = db.Column(db.Boolean, nullable=True)
+    horseId = db.Column(db.Integer, db.ForeignKey('Horses.idHorse'), nullable=False)
+    veterinarianId = db.Column(db.Integer, db.ForeignKey('Veterinarians.idVeterinarian'), nullable=True)
+    appointmentId = db.Column(db.Integer, db.ForeignKey('Appointments.idAppointment'), nullable=True)
