@@ -5,7 +5,6 @@ import uuid
 import json
 from datetime import datetime
 
-import requests
 from flask import Blueprint, jsonify, request, url_for
 from flask_jwt_extended import jwt_required
 from lib.models import Appointment, Horse, Measure, Veterinarian, db
@@ -14,6 +13,7 @@ from PIL import Image
 from werkzeug.exceptions import BadRequest, NotFound, UnsupportedMediaType
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
+from ..predict.predict import calculate_body_score # Import the new function
 
 measures_bp = Blueprint('measures', __name__)
 
@@ -92,16 +92,72 @@ def _delete_measure_image(filename):
         return False
 
 
-SUM_SERVER_URL = 'http://localhost:9097/sum_coordinates'
+def forward_coordinates(coordinates_list_of_dicts):
+    """
+    Processes coordinates to get algorithm-derived body weight (placeholder)
+    and body condition score (from prediction model).
 
-def forward_coordinates(coordinates):
-    """Placeholder function to simulate calling an external algorithm."""
+    Args:
+        coordinates_list_of_dicts (list): A list of dictionaries,
+                                          e.g., [{'x': x1, 'y': y1}, ..., {'x': x14, 'y': y14}].
+                                          Expected to contain 14 points.
+    Returns:
+        dict: A dictionary with 'algorithmBW', 'algorithmBCS', and optionally 'error'.
+    """
+    logger.info(f"Attempting to process coordinates: {coordinates_list_of_dicts}")
 
-    logger.info(f"Simulating coordinate processing for list: {coordinates}")
+    # Body Weight is still a placeholder
+    algo_bw = random.randint(500, 800)
+    algo_bcs = None
+    error_message = None
+
+    if not coordinates_list_of_dicts or not isinstance(coordinates_list_of_dicts, list):
+        logger.info("No coordinates provided or not in list format.")
+        return {'algorithmBW': algo_bw, 'algorithmBCS': algo_bcs}
+
+    flat_coordinates = []
+    for i, point_dict in enumerate(coordinates_list_of_dicts):
+        if isinstance(point_dict, dict) and 'x' in point_dict and 'y' in point_dict:
+            try:
+                flat_coordinates.append(float(point_dict['x']))
+                flat_coordinates.append(float(point_dict['y']))
+            except (ValueError, TypeError) as e:
+                error_message = f"Invalid coordinate value for point {i}: {point_dict}. Error: {e}"
+                logger.error(error_message)
+                return {'algorithmBW': algo_bw, 'algorithmBCS': None, 'error': error_message}
+        else:
+            error_message = f"Malformed coordinate entry at index {i}: {point_dict}. Expected dict with 'x' and 'y'."
+            logger.error(error_message)
+            return {'algorithmBW': algo_bw, 'algorithmBCS': None, 'error': error_message}
+
+    if len(flat_coordinates) == 28: # Expect 14 points * 2 coordinates each
+        try:
+            predicted_bcs = calculate_body_score(flat_coordinates)
+            algo_bcs = predicted_bcs # Already a float from calculate_body_score
+            logger.info(f"Successfully calculated Body Score: {algo_bcs}")
+        except ValueError as e: # Catch errors from calculate_body_score (e.g., wrong number of inputs, math errors)
+            error_message = f"Error calculating body score: {e}"
+            logger.error(error_message)
+        except FileNotFoundError as e: # Catch if model/scaler files are missing (should be caught at startup of predict.py)
+            error_message = f"Model/Scaler file not found for BCS calculation: {e}"
+            logger.error(error_message)
+            # This is a server configuration error, might warrant a different handling
+        except Exception as e:
+            error_message = f"Unexpected error during body score calculation: {e}"
+            logger.exception(error_message) # Use logger.exception to include stack trace
+    elif len(flat_coordinates) > 0:
+        error_message = f"Expected 28 coordinate values (14 pairs), but received {len(flat_coordinates)} from {len(coordinates_list_of_dicts)} points."
+        logger.warning(error_message)
+    else: # flat_coordinates is empty, meaning coordinates_list_of_dicts was empty or malformed early
+        logger.info("No valid coordinates to process for BCS.")
+
+    result = {'algorithmBW': algo_bw, 'algorithmBCS': algo_bcs}
+    if error_message:
+        result['error'] = error_message
 
     return {
-        'algorithmBW': random.randint(500, 800),
-        'algorithmBCS': random.randint(3, 5)
+        'algorithmBW': algo_bw,
+        'algorithmBCS': algo_bcs
     }
 
 
@@ -191,13 +247,21 @@ def add_measure():
         if coordinates:
             try:
                 results = forward_coordinates(coordinates)
-                algo_bw = results.get('algorithmBW')
-                algo_bcs = results.get('algorithmBCS')
+                if results.get('error'):
+                    logger.error(f"Coordinate processing failed for new measure: {results['error']}")
+                    # Decide if this should be a BadRequest or if measure can be saved without BCS
+                    # For now, allow saving without BCS, but log the error.
+                    # If coordinates were provided with the intent of calculation, client might expect an error.
+                    # Consider: raise BadRequest(f"Coordinate processing error: {results['error']}")
+                    algo_bw = results.get('algorithmBW') # BW might still be generated
+                    algo_bcs = None
+                else:
+                    algo_bw = results.get('algorithmBW')
+                    algo_bcs = results.get('algorithmBCS')
                 measure.algorithmBW = algo_bw
                 measure.algorithmBCS = algo_bcs
             except Exception as e:
                 logger.error(f"Failed to process coordinates for measure {measure.id}: {e}")
-
 
         if picture_file:
             try:
@@ -512,10 +576,17 @@ def update_measure(measure_id):
         if recalculate_algo:
             try:
                 logger.info(f"Recalculating algorithm results for measure {measure_id}")
-                results = forward_coordinates(measure.coordinates)
-                measure.algorithmBW = results.get('algorithmBW')
-                measure.algorithmBCS = results.get('algorithmBCS')
-
+                results = forward_coordinates(measure.coordinates) # measure.coordinates is a list of dicts
+                if results.get('error'):
+                    logger.error(f"Coordinate processing failed during update for measure {measure_id}: {results['error']}")
+                    # Similar to add_measure, decide on error handling.
+                    # For now, log and potentially clear/keep old values.
+                    measure.algorithmBW = results.get('algorithmBW') # Update BW if available
+                    measure.algorithmBCS = None # Clear BCS if calculation failed
+                else:
+                    measure.algorithmBW = results.get('algorithmBW')
+                    measure.algorithmBCS = results.get('algorithmBCS')
+                updated = True # Mark as updated if algo values changed or were recalculated
             except Exception as e:
                 logger.error(f"Failed to re-process coordinates for measure {measure_id}: {e}")
 

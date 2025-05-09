@@ -467,6 +467,45 @@ def get_appointments_by_horse(horse_id):
     except Exception as e:
         logger.exception(f"Server error getting appointments for horse {horse_id}.")
         return jsonify({"error": "An unexpected server error occurred"}), 500
+    
+
+@appointments_bp.route('/appointments/veterinarian/<int:veterinarian_id>', methods=['GET'])
+@jwt_required()
+def get_appointments_by_veterinarian(veterinarian_id):
+    """Gets appointments filtered by horse ID from URL."""
+    try:
+
+        if not Horse.query.get(veterinarian_id):
+             raise NotFound(f"Veterinarian with id {veterinarian_id} not found.")
+
+        appointments = Appointment.query.filter_by(veterinarianId=veterinarian_id).order_by(Appointment.date.desc()).all()
+
+        appointments_list = [{
+            "id": appt.id,
+            "horseId": appt.horseId,
+            "veterinarianId": appt.veterinarianId,
+            "date": appt.date.isoformat() if appt.date else None,
+            "lamenessRightFront": appt.lamenessRightFront,
+            "lamenessLeftFront": appt.lamenessLeftFront,
+            "lamenessRightHind": appt.lamenessRightHind,
+            "lamenessLeftHind": appt.lamenessLeftHind,
+            "BPM": appt.BPM,
+            "ECGtime": appt.ECGtime,
+            "muscleTensionFrequency": appt.muscleTensionFrequency,
+            "muscleTensionStiffness": appt.muscleTensionStiffness,
+            "muscleTensionR": appt.muscleTensionR,
+            "CBCpath": _get_cbc_url(appt.CBCpath),
+            "comment": appt.comment
+        } for appt in appointments]
+        return jsonify(appointments_list), 200
+
+    except NotFound as e:
+         logger.warning(f"Client error getting appointments for veterinarian {veterinarian_id}: {e}")
+         return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        logger.exception(f"Server error getting appointments for veterinarian {veterinarian_id}.")
+        return jsonify({"error": "An unexpected server error occurred"}), 500
+
 
 
 

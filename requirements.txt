@@ -16,3 +16,7 @@ python-dotenv
 bcrypt
 flask-bcrypt
 flask-cors
+numpy
+pandas
+matplotlib
+scikit-learn
