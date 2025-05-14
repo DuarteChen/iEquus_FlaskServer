@@ -25,7 +25,7 @@ class Veterinarian(db.Model):
     __tablename__ = 'Veterinarians'
 
     id = db.Column('idVeterinarian', db.Integer, primary_key=True, autoincrement=True)
-    name = db.Column(db.String(255), nullable=True)
+    name = db.Column(db.String(255), nullable=False)
     email = db.Column(db.String(255), nullable=False)
     phoneNumber = db.Column(db.String(20), nullable=True)
     phoneCountryCode = db.Column(db.String(10), nullable=True)
@@ -37,14 +37,9 @@ class Veterinarian(db.Model):
     measures = db.relationship('Measure', backref='veterinarian', cascade="all, delete-orphan")
 
     def set_password(self, password):
-        if password:
-            self.password = bcrypt.generate_password_hash(password).decode('utf-8')
-        else:
-            self.password = None
-
+        self.password = bcrypt.generate_password_hash(password).decode('utf-8')
+        
     def check_password(self, password):
-        if not self.password or not password:
-            return False
         return bcrypt.check_password_hash(self.password, password)
 
 

@@ -20,3 +20,4 @@ numpy
 pandas
 matplotlib
 scikit-learn
+zxcvbn
