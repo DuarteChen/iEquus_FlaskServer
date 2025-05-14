@@ -14,6 +14,7 @@ from lib.routes.appointments_routes import appointments_bp
 from lib.routes.measures_routes import measures_bp
 from lib.routes.xray_routes import xray_bp
 from lib.routes.login_routes import login_bp
+from lib.routes.hospitals_routes import hospitals_bp
 
 load_dotenv()
 
@@ -51,6 +52,9 @@ def create_app():
     app.register_blueprint(measures_bp)
     app.register_blueprint(xray_bp)
     app.register_blueprint(login_bp)
+    app.register_blueprint(hospitals_bp)
+
+    # Inicializar JWT
 
     jwt = JWTManager(app)
 

@@ -7,6 +7,8 @@ import phonenumbers
 from lib.models import Veterinarian, db
 from werkzeug.exceptions import NotFound, BadRequest, UnsupportedMediaType
 
+from lib.routes.hospitals_routes import hospitalToJson
+
 veterinarians_bp = Blueprint('veterinarians', __name__)
 
 logging.basicConfig(level=logging.INFO)
@@ -110,7 +112,6 @@ def get_veterinarians():
 def get_current_veterinarian():
     try:
         current_user_id = get_jwt_identity()
-        logger.info(f"Attempting to retrieve veterinarian details for ID from token: {current_user_id}")
 
         try:
             vet_id = int(current_user_id)
@@ -124,6 +125,9 @@ def get_current_veterinarian():
         )
 
         hospital = veterinarian.hospital
+        hospital_data = None
+        if hospital:
+            hospital_data = hospitalToJson(hospital)
 
         return jsonify({
             "idVeterinary": veterinarian.id,
@@ -132,16 +136,7 @@ def get_current_veterinarian():
             "phoneNumber": veterinarian.phoneNumber,
             "phoneCountryCode": veterinarian.phoneCountryCode,
             "idCedulaProfissional": veterinarian.idCedulaProfissional,
-            "hospital": {
-                "id": hospital.id,
-                "name": hospital.name,
-                "streetName": hospital.streetName,
-                "streetNumber": hospital.streetNumber,
-                "postalCode": hospital.postalCode,
-                "city": hospital.city,
-                "country": hospital.country,
-                "optionalAddressField": hospital.optionalAddressField
-            }
+            "hospital": hospital_data
         }), 200
 
     except NotFound as e:
@@ -312,5 +307,3 @@ def delete_current_veterinarian():
         db.session.rollback()
         logger.exception(f"Error deleting veterinarian for ID {current_user_id} from token.")
         return jsonify({"error": "An unexpected error occurred during deletion"}), 500
-
-

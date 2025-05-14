@@ -1,6 +1,6 @@
 from flask_bcrypt import Bcrypt
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.dialects.mysql import JSON
+from sqlalchemy.dialects.mysql import JSON, LONGTEXT
 from sqlalchemy.sql import func
 
 bcrypt = Bcrypt()
@@ -13,13 +13,12 @@ class Hospital(db.Model):
     name = db.Column(db.String(255), nullable=False)
     streetName = db.Column(db.String(255), nullable=False)
     streetNumber = db.Column(db.String(45), nullable=False)
-    postalCode = db.Column(db.String(45), nullable=False)
     city = db.Column(db.String(45), nullable=False)
     country = db.Column(db.String(45), nullable=False)
     optionalAddressField = db.Column(db.String(45), nullable=True)
+    logoPath = db.Column(db.String(255), nullable=True)
 
     veterinarians = db.relationship('Veterinarian', backref='hospital', cascade="all, delete-orphan")
-
 
 class Veterinarian(db.Model):
     __tablename__ = 'Veterinarians'
@@ -29,9 +28,9 @@ class Veterinarian(db.Model):
     email = db.Column(db.String(255), nullable=False)
     phoneNumber = db.Column(db.String(20), nullable=True)
     phoneCountryCode = db.Column(db.String(10), nullable=True)
-    password = db.Column(db.String(255), nullable=True)
+    password = db.Column(db.String(255), nullable=False)
     idCedulaProfissional = db.Column(db.String(40), nullable=False)
-    hospitalId = db.Column('Hospitals_idHospitals', db.Integer, db.ForeignKey('Hospitals.idHospitals'), nullable=False)
+    hospitalId = db.Column('Hospitals_idHospitals', db.Integer, db.ForeignKey('Hospitals.idHospitals'), nullable=True)
 
     appointments = db.relationship('Appointment', backref='veterinarian', cascade="all, delete-orphan")
     measures = db.relationship('Measure', backref='veterinarian', cascade="all, delete-orphan")
@@ -75,7 +74,7 @@ class Appointment(db.Model):
     muscleTensionStiffness = db.Column(db.String(255), nullable=True)
     muscleTensionR = db.Column(db.String(255), nullable=True)
     CBCpath = db.Column(db.String(255), nullable=True)
-    comment = db.Column(db.Text, nullable=True)
+    comment = db.Column(LONGTEXT, nullable=True)
     date = db.Column(db.DateTime, nullable=False, server_default=func.now())
     ECGtime = db.Column(db.Integer, nullable=True)
 

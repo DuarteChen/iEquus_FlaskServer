@@ -27,7 +27,7 @@ def register_veterinarian():
         phoneCountryCode = request.form.get('phoneCountryCode')
         hospitalId = request.form.get('hospitalId')
 
-        required_fields = {'name': name, 'email': email, 'password': password, 'idCedulaProfissional': idCedulaProfissional, 'hospitalId': hospitalId}
+        required_fields = {'name': name, 'email': email, 'password': password, 'idCedulaProfissional': idCedulaProfissional}
         missing_or_empty_fields = [key for key, value in required_fields.items() if not value or str(value).strip() == ""]
         if missing_or_empty_fields:
             #return jsonify({"error": f"Missing or empty required form fields: {', '.join(missing_or_empty_fields)}"}), 400
@@ -68,7 +68,6 @@ def register_veterinarian():
              except phonenumbers.phonenumberutil.NumberParseException:
                  return jsonify({"error": "Invalid phone number format"}), 400
              except Exception as e:
-                 #return jsonify({"error": f"Phone number validation error: {str(e)}"}), 400
                  return jsonify({"error": f"Phone number validation error."}), 400
         else:
              final_phone_number = None

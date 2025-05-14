@@ -1,10 +1,8 @@
 import logging
 import os
 from datetime import datetime
-from uuid import uuid4
 from flask import Blueprint, request, jsonify, url_for
 from flask_jwt_extended import jwt_required
-from werkzeug.utils import secure_filename
 from werkzeug.exceptions import BadRequest, NotFound, UnsupportedMediaType
 
 from werkzeug.datastructures import FileStorage
@@ -19,15 +17,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-STATIC_FOLDER_REL = os.path.join('lib', 'static')
-IMAGES_FOLDER_REL = os.path.join(STATIC_FOLDER_REL, 'images')
-PROFILE_PICS_FOLDER_REL = os.path.join(IMAGES_FOLDER_REL, 'horse_profile')
-LIMBS_PICS_FOLDER_REL = os.path.join(IMAGES_FOLDER_REL, 'horse_limbs')
+# These are paths from project_root to the actual directories where files are stored
+HORSES_LIMBS_FOLDER = os.path.join('lib','static','horses', 'horse_limbs')
+HORSES_PROFILE_FOLDER = os.path.join('lib','static','horses', 'horse_profile')
 
+# Absolute paths for saving/deleting files on the server
+profile_PicturesFolder = os.path.join(project_root, HORSES_PROFILE_FOLDER)
+limbs_PicturesFolder = os.path.join(project_root, HORSES_LIMBS_FOLDER)
 
-profile_PicturesFolder = os.path.join(project_root, PROFILE_PICS_FOLDER_REL)
-limbs_PicturesFolder = os.path.join(project_root, LIMBS_PICS_FOLDER_REL)
+# Base paths relative to the static folder, for URL generation
+HORSES_PROFILE_URL_BASE = os.path.join('horses', 'horse_profile')
+HORSES_LIMBS_URL_BASE = os.path.join('horses', 'horse_limbs')
 
 
 os.makedirs(profile_PicturesFolder, exist_ok=True)
@@ -42,14 +44,18 @@ def _get_image_url(filename, image_type):
     if not filename:
         return None
     try:
+        base_url_path = None
         if image_type == 'profile':
-            relative_path = os.path.join('images', 'horse_profile', filename).replace('\\', '/')
-            return url_for('static', filename=relative_path, _external=True)
+            base_url_path = HORSES_PROFILE_URL_BASE
         elif image_type == 'limb':
-            relative_path = os.path.join('images', 'horse_limbs', filename).replace('\\', '/')
-            return url_for('static', filename=relative_path, _external=True)
+            base_url_path = HORSES_LIMBS_URL_BASE
         else:
+            logger.warning(f"Unknown image_type '{image_type}' requested for filename '{filename}' in _get_image_url.")
             return None
+        
+        # Construct path relative to static folder (e.g., 'horses/horse_profile/image.webp')
+        static_relative_path = os.path.join(base_url_path, filename).replace('\\', '/')
+        return url_for('static', filename=static_relative_path, _external=True)
     except RuntimeError as e:
         logger.error(f"Error generating URL for {filename} (type: {image_type}): {e}")
         return None
@@ -65,14 +71,13 @@ def _save_horse_image_from_filestorage(image_file: FileStorage, horse_id, image_
 
     try:
 
-        safe_original = secure_filename(image_file.filename)
-        unique_filename = f"{horse_id}_{image_type_prefix}_{uuid4()}.webp"
+        unique_filename = f"{horse_id}_{image_type_prefix}.webp"
         save_path = os.path.join(target_folder, unique_filename)
 
 
         with Image.open(image_file.stream) as img:
 
-            img.save(save_path, "WEBP", quality=85)
+            img.save(save_path, "WEBP", quality=100)
 
         logger.info(f"Saved image for horse {horse_id} to {save_path}")
         return unique_filename
@@ -214,11 +219,19 @@ def update_horse(horse_id):
 
             if image_file:
                 try:
+                    # 1. Save the new image. This might overwrite an existing file if names are identical.
                     new_filename = _save_horse_image_from_filestorage(image_file, horse.id, type_prefix, folder)
+                    
+                    # 2. old_filename holds the filename that was in the DB before this operation.
+
+                    # 3. If there was an old file AND its name is DIFFERENT from the new file's name,
+                    #    then delete the old file.
+                    if old_filename and old_filename != new_filename:
+                        _delete_horse_image(old_filename, folder)
+                    
+                    # 4. Update the horse model attribute with the new filename.
                     setattr(horse, path_attr, new_filename)
                     updated = True
-
-                    _delete_horse_image(old_filename, folder)
                 except ValueError as e:
                     raise BadRequest(str(e))
 
@@ -257,15 +270,12 @@ def update_horse(horse_id):
         logger.exception(f"Server error updating horse {horse_id}.")
         return jsonify({"error": "An unexpected server error occurred"}), 500
 
-
-
 @horses_bp.route('/horse/<int:horse_id>', methods=['DELETE'])
 @jwt_required()
 def delete_horse(horse_id):
     """Deletes a horse and its images using the ID from the URL."""
     try:
         horse = Horse.query.get_or_404(horse_id, description=f"Horse with id {horse_id} not found.")
-
 
         filenames_to_delete = [
             (horse.profilePicturePath, profile_PicturesFolder),
@@ -301,8 +311,7 @@ def add_horse():
     """
     Adds a new horse. Expects multipart/form-data.
     Requires 'name' (form field). Optional 'birthDate' (form field, YYYY-MM-DD or empty string).
-    Optional image files: 'profilePicture', 'pictureRightFront', 'pictureLeftFront',
-                          'pictureRightHind', 'pictureLeftHind'.
+    Optional image files: 'profilePicture', 'pictureRightFront', 'pictureLeftFront', 'pictureRightHind', 'pictureLeftHind'.
     """
     try:
 
