@@ -2,13 +2,15 @@ import logging
 import os
 from datetime import datetime
 from flask import Blueprint, request, jsonify, url_for
-from flask_jwt_extended import jwt_required
-from werkzeug.exceptions import BadRequest, NotFound, UnsupportedMediaType
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from werkzeug.exceptions import BadRequest, NotFound, UnsupportedMediaType, Unauthorized
 
 from werkzeug.datastructures import FileStorage
-from lib.models import Client, ClientHorse, Horse, db
+from lib.models import Client, ClientHorse, Horse, Veterinarian, db
 from PIL import Image
-import io
+
+from lib.routes.veterinarians_routes import _get_veterinarian_details_for_response
+
 
 horses_bp = Blueprint('horses', __name__)
 
@@ -106,18 +108,43 @@ def _delete_horse_image(filename, target_folder):
         return False
 
 
-
 @horses_bp.route('/horses', methods=['GET'])
 @jwt_required()
 def get_horses():
     """Gets a list of all horses with image URLs. (Uses JSON response)"""
     try:
-        horses = Horse.query.order_by(Horse.name).all()
+        current_user_id = get_jwt_identity()
+        try:
+            vet_id = int(current_user_id)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for get_horses: {current_user_id}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
+
+        veterinarian = Veterinarian.query.get(vet_id)
+        if not veterinarian:
+            logger.warning(f"Veterinarian with ID {vet_id} from token not found.")
+            return jsonify({"error": "Authenticated veterinarian not found"}), 404
+
+        query = Horse.query
+
+        if veterinarian.hospitalId:
+            # Vet has a hospital, get all horses from all vets in that hospital
+            logger.info(f"Veterinarian {vet_id} belongs to hospital {veterinarian.hospitalId}. Fetching horses for all vets in this hospital.")
+            vets_in_hospital = Veterinarian.query.filter_by(hospitalId=veterinarian.hospitalId).all()
+            vet_ids_in_hospital = [v.id for v in vets_in_hospital]
+            query = query.filter(Horse.veterinarianId.in_(vet_ids_in_hospital))
+        else:
+            # Vet does not have a hospital, get only their horses
+            logger.info(f"Veterinarian {vet_id} does not belong to a hospital. Fetching only their horses.")
+            query = query.filter_by(veterinarianId=vet_id)
+
+        horses = query.order_by(Horse.name).all()
         horses_list = [{
             "idHorse": horse.id,
             "name": horse.name,
             "profilePicturePath": _get_image_url(horse.profilePicturePath, 'profile'),
             "birthDate": horse.birthDate.isoformat() if horse.birthDate else None,
+            "veterinarian": _get_veterinarian_details_for_response(horse.veterinarianId),
             "pictureRightFrontPath": _get_image_url(horse.pictureRightFrontPath, 'limb'),
             "pictureLeftFrontPath": _get_image_url(horse.pictureLeftFrontPath, 'limb'),
             "pictureRightHindPath": _get_image_url(horse.pictureRightHindPath, 'limb'),
@@ -136,7 +163,34 @@ def get_horses():
 def get_horse_by_id(horse_id):
     """Gets details for a single horse using the ID from the URL."""
     try:
+        current_user_id = get_jwt_identity()
+        try:
+            current_vet_id = int(current_user_id)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for get_horse_by_id: {current_user_id}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
+
+        current_veterinarian = Veterinarian.query.get(current_vet_id)
+        if not current_veterinarian:
+            logger.warning(f"Veterinarian with ID {current_vet_id} from token not found (in get_horse_by_id).")
+            # Return 404 to obscure that the vet doesn't exist vs horse doesn't exist for this vet
+            return jsonify({"error": f"Horse with id {horse_id} not found."}), 404
+
         horse = Horse.query.get_or_404(horse_id, description=f"Horse with id {horse_id} not found.")
+
+        # Check access permissions
+        can_access = False
+        if horse.veterinarianId == current_vet_id:
+            can_access = True
+        elif current_veterinarian.hospitalId is not None:
+            # horse.veterinarian is the relationship to the Veterinarian object owning the horse
+            if horse.veterinarian and horse.veterinarian.hospitalId == current_veterinarian.hospitalId:
+                can_access = True
+
+        if not can_access:
+            logger.warning(f"Veterinarian {current_vet_id} attempted to access horse {horse_id} without permission.")
+            return jsonify({"error": f"404 Not Found: Horse with id {horse_id} not found."}), 404 # Obscure permission denial
+
         return jsonify({
             "idHorse": horse.id,
             "name": horse.name,
@@ -154,8 +208,6 @@ def get_horse_by_id(horse_id):
         logger.exception(f"Server error getting horse {horse_id}.")
         return jsonify({"error": "An unexpected server error occurred"}), 500
 
-
-
 @horses_bp.route('/horse/<int:horse_id>', methods=['PUT'])
 @jwt_required()
 def update_horse(horse_id):
@@ -172,8 +224,33 @@ def update_horse(horse_id):
         if not request.content_type or 'multipart/form-data' not in request.content_type.lower():
              raise UnsupportedMediaType("Content-Type must be multipart/form-data for PUT.")
 
+        current_user_id = get_jwt_identity()
+        try:
+            current_vet_id = int(current_user_id)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for update_horse: {current_user_id}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
+
+        current_veterinarian = Veterinarian.query.get(current_vet_id)
+        if not current_veterinarian:
+            logger.warning(f"Veterinarian with ID {current_vet_id} from token not found (in update_horse).")
+            return jsonify({"error": f"Horse with id {horse_id} not found."}), 404
+
 
         horse = Horse.query.get_or_404(horse_id, description=f"Horse with id {horse_id} not found.")
+        
+        # Check access permissions before allowing update
+        can_access = False
+        if horse.veterinarianId == current_vet_id:
+            can_access = True
+        elif current_veterinarian.hospitalId is not None:
+            if horse.veterinarian and horse.veterinarian.hospitalId == current_veterinarian.hospitalId:
+                can_access = True
+        
+        if not can_access:
+            logger.warning(f"Veterinarian {current_vet_id} attempted to update horse {horse_id} without permission.")
+            return jsonify({"error": f"Horse with id {horse_id} not found."}), 404 # Obscure permission denial
+
         updated = False
 
 
@@ -219,17 +296,16 @@ def update_horse(horse_id):
 
             if image_file:
                 try:
-                    # 1. Save the new image. This might overwrite an existing file if names are identical.
+
                     new_filename = _save_horse_image_from_filestorage(image_file, horse.id, type_prefix, folder)
                     
-                    # 2. old_filename holds the filename that was in the DB before this operation.
 
-                    # 3. If there was an old file AND its name is DIFFERENT from the new file's name,
-                    #    then delete the old file.
+
+
                     if old_filename and old_filename != new_filename:
                         _delete_horse_image(old_filename, folder)
                     
-                    # 4. Update the horse model attribute with the new filename.
+
                     setattr(horse, path_attr, new_filename)
                     updated = True
                 except ValueError as e:
@@ -275,7 +351,33 @@ def update_horse(horse_id):
 def delete_horse(horse_id):
     """Deletes a horse and its images using the ID from the URL."""
     try:
+        current_user_id = get_jwt_identity()
+        try:
+            current_vet_id = int(current_user_id)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for delete_horse: {current_user_id}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
+
+        current_veterinarian = Veterinarian.query.get(current_vet_id)
+        if not current_veterinarian:
+            logger.warning(f"Veterinarian with ID {current_vet_id} from token not found (in delete_horse).")
+            return jsonify({"error": f"Horse with id {horse_id} not found."}), 404
+
         horse = Horse.query.get_or_404(horse_id, description=f"Horse with id {horse_id} not found.")
+
+        # Check access permissions before allowing deletion
+        can_access = False
+        if horse.veterinarianId == current_vet_id:
+            can_access = True
+        elif current_veterinarian.hospitalId is not None:
+            # horse.veterinarian is the relationship to the Veterinarian object owning the horse
+            if horse.veterinarian and horse.veterinarian.hospitalId == current_veterinarian.hospitalId:
+                can_access = True
+        
+        if not can_access:
+            logger.warning(f"Veterinarian {current_vet_id} attempted to delete horse {horse_id} without permission.")
+            return jsonify({"error": f"Horse with id {horse_id} not found."}), 404 # Obscure permission denial
+
 
         filenames_to_delete = [
             (horse.profilePicturePath, profile_PicturesFolder),
@@ -303,8 +405,6 @@ def delete_horse(horse_id):
         logger.exception(f"Server error deleting horse {horse_id}.")
         return jsonify({"error": "An unexpected server error occurred"}), 500
 
-
-
 @horses_bp.route('/horse', methods=['POST'])
 @jwt_required()
 def add_horse():
@@ -322,10 +422,19 @@ def add_horse():
         if not name or name.strip() == "":
             raise BadRequest("Horse name form field is required and cannot be empty.")
 
+        # Get the veterinarian ID from the JWT token
+        current_user_id = get_jwt_identity()
+        try:
+            veterinarian_id = int(current_user_id)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token: {current_user_id}")
+            raise Unauthorized("Invalid user identity in token.")
+
 
         birth_date_str = request.form.get('birthDate')
         birth_date = None
 
+        # Parse birth date if provided
         if birth_date_str is not None and birth_date_str.strip() != "":
             try:
                 birth_date = datetime.strptime(birth_date_str, '%Y-%m-%d').date()
@@ -334,8 +443,10 @@ def add_horse():
 
 
 
+        # Create the Horse instance, associating it with the veterinarian
         horse = Horse(
             name=name,
+            veterinarianId=veterinarian_id, # Assign the veterinarian ID
             birthDate=birth_date
         )
         db.session.add(horse)
@@ -381,21 +492,21 @@ def add_horse():
             "profilePicturePath": _get_image_url(horse.profilePicturePath, 'profile'),
             "birthDate": horse.birthDate.isoformat() if horse.birthDate else None,
             "pictureRightFrontPath": _get_image_url(horse.pictureRightFrontPath, 'limb'),
+            # Include veterinarian ID in the response
+            "veterinarianId": horse.veterinarianId,
             "pictureLeftFrontPath": _get_image_url(horse.pictureLeftFrontPath, 'limb'),
             "pictureRightHindPath": _get_image_url(horse.pictureRightHindPath, 'limb'),
             "pictureLeftHindPath": _get_image_url(horse.pictureLeftHindPath, 'limb')
         }), 201
 
     except (BadRequest, NotFound, UnsupportedMediaType) as e:
-        db.session.rollback()
+        db.session.rollback() # Rollback changes if any part of the process failed
         logger.warning(f"Client error adding horse: {e}")
         return jsonify({"error": str(e)}), e.code if hasattr(e, 'code') else 400
     except Exception as e:
         db.session.rollback()
         logger.exception("Server error adding horse.")
         return jsonify({"error": "An unexpected server error occurred"}), 500
-
-
 
 @horses_bp.route('/horse/<int:horse_id>/clients', methods=['GET'])
 @jwt_required()
@@ -405,6 +516,18 @@ def get_horse_clients(horse_id):
     identified by the ID in the URL path.
     """
     try:
+        current_user_id = get_jwt_identity()
+        try:
+            current_vet_id = int(current_user_id)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for get_horse_by_id: {current_user_id}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
+
+        current_veterinarian = Veterinarian.query.get(current_vet_id)
+        if not current_veterinarian:
+            logger.warning(f"Veterinarian with ID {current_vet_id} from token not found (in get_horse_by_id).")
+            # Return 404 to obscure that the vet doesn't exist vs horse doesn't exist for this vet
+            return jsonify({"error": f"Horse with id {horse_id} not found."}), 404
 
         horse = Horse.query.get_or_404(horse_id, description=f"Horse with id {horse_id} not found.")
 

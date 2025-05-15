@@ -1,5 +1,3 @@
-import base64
-import io
 import logging
 import os
 from flask import Blueprint, request, jsonify, url_for
@@ -39,7 +37,6 @@ def convert_to_pdf(input_path, output_path):
     Raises:
         Exception: If conversion fails or format is unsupported.
     """
-    temp_pdf_path = None
     try:
         file_ext = os.path.splitext(input_path)[1].lower()
         output_dir = os.path.dirname(output_path)
@@ -170,14 +167,12 @@ def convert_to_pdf(input_path, output_path):
         raise ValueError(f"Unsupported file format for PDF conversion: {file_ext}")
 
     except Exception as e:
-        logger.exception(f"Error during PDF conversion process for '{input_path}': {e}")
+        logger.exception(f"Error during PDF conversion process for '{input_path}': {str(e)}")
 
-        if temp_pdf_path and os.path.exists(temp_pdf_path):
-            try:
-                os.remove(temp_pdf_path)
-            except OSError as ose:
-                logger.warning(f"Could not remove intermediate LibreOffice file during error cleanup '{temp_pdf_path}': {ose}")
-
+        # Attempt to clean up any intermediate file LibreOffice might have created
+        # This is the file LibreOffice would create in output_dir before a potential rename
+        # It's important to clean this up if the process failed after its creation but before successful rename/cleanup.
+        # This path is constructed based on how LibreOffice names its output with --outdir
         libreoffice_output_pdf_check = os.path.join(os.path.dirname(output_path), f"{os.path.splitext(os.path.basename(input_path))[0]}.pdf")
         if os.path.exists(libreoffice_output_pdf_check) and libreoffice_output_pdf_check != output_path:
              try:
@@ -185,7 +180,6 @@ def convert_to_pdf(input_path, output_path):
                  logger.info(f"Cleaned up intermediate libreoffice output: {libreoffice_output_pdf_check}")
              except OSError as ose:
                  logger.warning(f"Could not remove intermediate LibreOffice file during error cleanup '{libreoffice_output_pdf_check}': {ose}")
-
 
         raise Exception(f"Error converting file to PDF: {str(e)}")
 
@@ -277,40 +271,57 @@ def _delete_cbc_pdf(filename):
 
 
 
-@appointments_bp.route('/appointments', methods=['POST'])
+@appointments_bp.route('/appointment', methods=['POST'])
 @jwt_required()
 def add_appointment():
     """
     Adds a new appointment. Expects multipart/form-data.
     Required form fields: 'horseId', 'veterinarianId'.
     Optional form fields: 'lamenessRightFront', 'lamenessLeftFront', 'lamenessRightHind',
-                          'lamenessLeftHind', 'BPM', 'ECGtime', 'muscleTensionFrequency',
+                          'lamenessLeftHind', 'BPM', 'ECGtime', 'muscleTensionFrequency', # noqa: E501
                           'muscleTensionStiffness', 'muscleTensionR', 'comment'.
     Optional file upload: 'cbcFile'.
     """
+    requesting_vet_id_str = None # For logging
     try:
-
         if not request.content_type or 'multipart/form-data' not in request.content_type.lower():
              raise UnsupportedMediaType("Content-Type must be multipart/form-data.")
 
+        requesting_vet_id_str = get_jwt_identity()
+        try:
+            requesting_vet_id = int(requesting_vet_id_str)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for add_appointment: {requesting_vet_id_str}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
+
+        requesting_veterinarian = Veterinarian.query.get(requesting_vet_id)
+        if not requesting_veterinarian:
+            logger.warning(f"Veterinarian with ID {requesting_vet_id} from token not found (in add_appointment).")
+            return jsonify({"error": "Authenticated veterinarian not found"}), 404
 
         horse_id_str = request.form.get('horseId')
-        veterinarian_id_str = request.form.get('veterinarianId')
-
         try:
             if horse_id_str is None: raise ValueError("horseId form field is required.")
             horse_id = int(horse_id_str)
-            if veterinarian_id_str is None: raise ValueError("veterinarianId form field is required.")
-            veterinarian_id = int(veterinarian_id_str)
         except (ValueError, TypeError) as ve:
-             raise BadRequest(f"Invalid or missing ID in form data: {ve}")
+             raise BadRequest(f"Invalid horseId in form data: {ve}")
 
+        horse = Horse.query.get(horse_id)
+        if not horse:
+            raise NotFound(f"Horse with id {horse_id} not found.")
 
-        if not Horse.query.get(horse_id):
-             raise NotFound(f"Horse with id {horse_id} not found.")
-        if not Veterinarian.query.get(veterinarian_id):
-             raise NotFound(f"Veterinarian with id {veterinarian_id} not found.")
+        # Authorization: Check if the requesting vet can create appointments for this horse
+        can_access_horse = False
+        if horse.veterinarianId == requesting_vet_id:
+            can_access_horse = True
+        elif requesting_veterinarian.hospitalId is not None and \
+             horse.veterinarian and \
+             horse.veterinarian.hospitalId == requesting_veterinarian.hospitalId:
+            can_access_horse = True
 
+        if not can_access_horse:
+            logger.warning(f"Veterinarian {requesting_vet_id} attempt to create appointment for horse {horse_id} without permission.")
+            return jsonify({"error": "Forbidden. You do not have permission to create appointments for this horse."}), 403
 
         lameness_rf = request.form.get('lamenessRightFront', type=int, default=None)
         lameness_lf = request.form.get('lamenessLeftFront', type=int, default=None)
@@ -326,7 +337,7 @@ def add_appointment():
 
         appointment = Appointment(
             horseId=horse_id,
-            veterinarianId=veterinarian_id,
+            veterinarianId=requesting_vet_id, # Assign to the logged-in veterinarian
             lamenessRightFront=lameness_rf,
             lamenessLeftFront=lameness_lf,
             lamenessRightHind=lameness_rh,
@@ -391,22 +402,42 @@ def add_appointment():
         }), 201
 
     except (BadRequest, NotFound, UnsupportedMediaType) as e:
-        db.session.rollback()
         logger.warning(f"Client error adding appointment: {e}")
         return jsonify({"error": str(e)}), e.code if hasattr(e, 'code') else 400
     except Exception as e:
+        # db.session.rollback() might have already been called if an error occurred during db.flush() or db.commit()
         db.session.rollback()
         logger.exception("Server error adding appointment.")
         return jsonify({"error": "An unexpected server error occurred"}), 500
 
 
-
 @appointments_bp.route('/appointments', methods=['GET'])
 @jwt_required()
 def get_appointments():
-    """Gets a list of all appointments."""
+    """
+    Gets a list of appointments associated with the veterinarian identified by the JWT token.
+    """
+    requesting_vet_id_str = None # For logging in case of errors
     try:
-        appointments = Appointment.query.order_by(Appointment.date.desc()).all()
+        requesting_vet_id_str = get_jwt_identity()
+        try:
+            requesting_vet_id = int(requesting_vet_id_str)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for get_appointments: {requesting_vet_id_str}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
+
+        # Verify the veterinarian exists
+        veterinarian = Veterinarian.query.get(requesting_vet_id)
+        if not veterinarian:
+            logger.warning(f"Veterinarian with ID {requesting_vet_id} from token not found (in get_appointments).")
+            # 404 is appropriate as the resource (the vet's appointments) effectively doesn't exist for this token.
+            return jsonify({"error": f"Veterinarian with ID {requesting_vet_id} not found."}), 404
+
+        logger.info(f"Fetching appointments for veterinarian ID: {requesting_vet_id}")
+        appointments = Appointment.query.filter_by(veterinarianId=requesting_vet_id)\
+                                        .order_by(Appointment.date.desc())\
+                                        .all()
+
         appointments_list = [{
             "id": appt.id,
             "horseId": appt.horseId,
@@ -425,8 +456,11 @@ def get_appointments():
             "comment": appt.comment,
         } for appt in appointments]
         return jsonify(appointments_list), 200
+    except NotFound as e: # Should be caught if Veterinarian.query.get_or_404 was used, but good to have if direct .get is used.
+        logger.warning(f"Not found error in get_appointments (requester from token: {requesting_vet_id_str}): {str(e)}")
+        return jsonify({"error": str(e)}), 404
     except Exception as e:
-        logger.exception("Server error getting all appointments.")
+        logger.exception(f"Server error getting appointments for veterinarian (token ID: {requesting_vet_id_str}).")
         return jsonify({"error": "An unexpected server error occurred"}), 500
 
 
@@ -435,10 +469,32 @@ def get_appointments():
 @jwt_required()
 def get_appointments_by_horse(horse_id):
     """Gets appointments filtered by horse ID from URL."""
+    requesting_vet_id_str = None
     try:
+        requesting_vet_id_str = get_jwt_identity()
+        try:
+            requesting_vet_id = int(requesting_vet_id_str)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for get_appointments_by_horse: {requesting_vet_id_str}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
 
-        if not Horse.query.get(horse_id):
-             raise NotFound(f"Horse with id {horse_id} not found.")
+        requesting_veterinarian = Veterinarian.query.get(requesting_vet_id)
+        if not requesting_veterinarian: # Should ideally not happen if token is valid
+            return jsonify({"error": "Authenticated veterinarian not found"}), 404
+
+        horse = Horse.query.get_or_404(horse_id, description=f"Horse with id {horse_id} not found.")
+
+        # Authorization: Check if the requesting vet can view appointments for this horse
+        can_access_horse = False
+        if horse.veterinarianId == requesting_vet_id:
+            can_access_horse = True
+        elif requesting_veterinarian.hospitalId is not None and \
+             horse.veterinarian and horse.veterinarian.hospitalId == requesting_veterinarian.hospitalId:
+            can_access_horse = True
+
+        if not can_access_horse:
+            logger.warning(f"Veterinarian {requesting_vet_id} attempt to access appointments for horse {horse_id} without permission.")
+            return jsonify({"error": "Forbidden. You do not have permission to view appointments for this horse."}), 403
 
         appointments = Appointment.query.filter_by(horseId=horse_id).order_by(Appointment.date.desc()).all()
 
@@ -462,23 +518,36 @@ def get_appointments_by_horse(horse_id):
         return jsonify(appointments_list), 200
 
     except NotFound as e:
-         logger.warning(f"Client error getting appointments for horse {horse_id}: {e}")
+         logger.warning(f"Not found error in get_appointments_by_horse (horse_id: {horse_id}, requester: {requesting_vet_id_str}): {e}")
          return jsonify({"error": str(e)}), 404
     except Exception as e:
-        logger.exception(f"Server error getting appointments for horse {horse_id}.")
+        logger.exception(f"Server error getting appointments for horse {horse_id} (requester: {requesting_vet_id_str}).")
         return jsonify({"error": "An unexpected server error occurred"}), 500
     
 
 @appointments_bp.route('/appointments/veterinarian/<int:veterinarian_id>', methods=['GET'])
 @jwt_required()
 def get_appointments_by_veterinarian(veterinarian_id):
-    """Gets appointments filtered by horse ID from URL."""
+    """Gets appointments filtered by veterinarian ID from URL. Requester must be the veterinarian themselves."""
+    requesting_vet_id_str = None
     try:
+        requesting_vet_id_str = get_jwt_identity()
+        try:
+            requesting_vet_id_from_token = int(requesting_vet_id_str)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for get_appointments_by_veterinarian: {requesting_vet_id_str}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
 
-        if not Horse.query.get(veterinarian_id):
-             raise NotFound(f"Veterinarian with id {veterinarian_id} not found.")
+        # Authorization: Vet can only get their own appointments via this specific route
+        if veterinarian_id != requesting_vet_id_from_token:
+            logger.warning(f"Veterinarian {requesting_vet_id_from_token} attempted to access appointments for veterinarian {veterinarian_id} without permission.")
+            return jsonify({"error": "Forbidden. You can only access your own appointments."}), 403
 
-        appointments = Appointment.query.filter_by(veterinarianId=veterinarian_id).order_by(Appointment.date.desc()).all()
+        target_veterinarian = Veterinarian.query.get_or_404(
+            veterinarian_id,
+            description=f"Veterinarian with id {veterinarian_id} not found."
+        )
+        appointments = Appointment.query.filter_by(veterinarianId=target_veterinarian.id).order_by(Appointment.date.desc()).all()
 
         appointments_list = [{
             "id": appt.id,
@@ -500,21 +569,33 @@ def get_appointments_by_veterinarian(veterinarian_id):
         return jsonify(appointments_list), 200
 
     except NotFound as e:
-         logger.warning(f"Client error getting appointments for veterinarian {veterinarian_id}: {e}")
+         logger.warning(f"Not found error in get_appointments_by_veterinarian (vet_id: {veterinarian_id}, requester: {requesting_vet_id_str}): {e}")
          return jsonify({"error": str(e)}), 404
     except Exception as e:
-        logger.exception(f"Server error getting appointments for veterinarian {veterinarian_id}.")
+        logger.exception(f"Server error getting appointments for veterinarian {veterinarian_id} (requester: {requesting_vet_id_str}).")
         return jsonify({"error": "An unexpected server error occurred"}), 500
-
-
-
 
 @appointments_bp.route('/appointment/<int:appointment_id>', methods=['GET'])
 @jwt_required()
 def get_appointment_by_id(appointment_id):
     """Gets details for a single appointment using the ID from the URL."""
+    requesting_vet_id_str = None
     try:
+        requesting_vet_id_str = get_jwt_identity()
+        try:
+            requesting_vet_id = int(requesting_vet_id_str)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for get_appointment_by_id: {requesting_vet_id_str}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
+
         appointment = Appointment.query.get_or_404(appointment_id, description=f"Appointment with id {appointment_id} not found")
+
+        # Authorization: Check if the requesting vet is assigned to this appointment
+        if appointment.veterinarianId != requesting_vet_id:
+            logger.warning(
+                f"Veterinarian {requesting_vet_id} attempt to access appointment {appointment_id} "
+                f"(owned by {appointment.veterinarianId}) without permission.")
+            return jsonify({"error": "Forbidden. You can only access your own appointments."}), 403
 
         return jsonify({
             "id": appointment.id,
@@ -534,12 +615,11 @@ def get_appointment_by_id(appointment_id):
             "comment": appointment.comment,
         }), 200
     except NotFound as e:
-        logger.warning(f"Client error getting appointment {appointment_id}: {e}")
+        logger.warning(f"Not found error in get_appointment_by_id (appt_id: {appointment_id}, requester: {requesting_vet_id_str}): {e}")
         return jsonify({"error": str(e)}), 404
     except Exception as e:
-        logger.exception(f"Server error getting appointment {appointment_id}.")
+        logger.exception(f"Server error getting appointment {appointment_id} (requester: {requesting_vet_id_str}).")
         return jsonify({"error": "An unexpected server error occurred"}), 500
-
 
 
 @appointments_bp.route('/appointment/<int:appointment_id>', methods=['PUT'])
@@ -551,33 +631,45 @@ def update_appointment(appointment_id):
     Optional form fields: 'veterinarianId', 'lamenessRightFront', 'lamenessLeftFront',
                           'lamenessRightHind', 'lamenessLeftHind', 'BPM', 'ECGtime',
                           'muscleTensionFrequency', 'muscleTensionStiffness',
-                          'muscleTensionR', 'comment'.
+                          'muscleTensionR', 'comment'. # noqa: E501
     Optional file upload: 'cbcFile'.
     To remove CBC file, send form field 'remove_cbcFile=true'.
     """
+    requesting_vet_id_str = None
     try:
-
         if not request.content_type or 'multipart/form-data' not in request.content_type.lower():
              raise UnsupportedMediaType("Content-Type must be multipart/form-data for PUT.")
 
+        requesting_vet_id_str = get_jwt_identity()
+        try:
+            requesting_vet_id = int(requesting_vet_id_str)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for update_appointment: {requesting_vet_id_str}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
 
         appointment = Appointment.query.get_or_404(appointment_id, description=f"Appointment with id {appointment_id} not found")
 
+        # Authorization: Vet can only update their own appointments
+        if appointment.veterinarianId != requesting_vet_id:
+            logger.warning(
+                f"Veterinarian {requesting_vet_id} attempt to update appointment {appointment_id} "
+                f"(owned by {appointment.veterinarianId}) without permission.")
+            return jsonify({"error": "Forbidden. You can only update your own appointments."}), 403
+
         updated = False
 
-
+        # VeterinarianId of an appointment is not changed via this endpoint.
+        # The appointment remains assigned to the current veterinarian (requesting_vet_id).
         if 'veterinarianId' in request.form:
-            try:
-                new_vet_id = request.form.get('veterinarianId', type=int)
-                if new_vet_id is None: raise ValueError("Veterinarian ID cannot be empty if provided.")
-                if not Veterinarian.query.get(new_vet_id):
-                    raise BadRequest(f"Veterinarian with id {new_vet_id} not found.")
-                if appointment.veterinarianId != new_vet_id:
-                    appointment.veterinarianId = new_vet_id
-                    updated = True
-            except (ValueError, TypeError):
-                raise BadRequest("Invalid veterinarianId format.")
-
+            new_vet_id_from_form_str = request.form.get('veterinarianId')
+            if new_vet_id_from_form_str is not None and new_vet_id_from_form_str.strip() != "":
+                try:
+                    new_vet_id_from_form = int(new_vet_id_from_form_str)
+                    if new_vet_id_from_form != appointment.veterinarianId:
+                        # Vet is trying to change assignment, which is not allowed here.
+                        raise BadRequest("Cannot change the assigned veterinarian of the appointment via this endpoint.")
+                except (ValueError, TypeError):
+                    raise BadRequest("Invalid veterinarianId format in form data.")
 
         if 'comment' in request.form:
             new_comment = request.form.get('comment')
@@ -668,12 +760,12 @@ def update_appointment(appointment_id):
         }), 200
 
     except (NotFound, BadRequest, UnsupportedMediaType) as e:
-        db.session.rollback()
-        logger.warning(f"Client error updating appointment {appointment_id}: {e}")
+        # db.session.rollback() # Not strictly needed here as commit hasn't happened
+        logger.warning(f"Client error updating appointment {appointment_id} (requester: {requesting_vet_id_str}): {e}")
         return jsonify({"error": str(e)}), e.code if hasattr(e, 'code') else 400
     except Exception as e:
         db.session.rollback()
-        logger.exception(f"Server error updating appointment {appointment_id}.")
+        logger.exception(f"Server error updating appointment {appointment_id} (requester: {requesting_vet_id_str}).")
         return jsonify({"error": "An unexpected server error occurred"}), 500
 
 
@@ -682,8 +774,22 @@ def update_appointment(appointment_id):
 @jwt_required()
 def delete_appointment(appointment_id):
     """Deletes an appointment and its associated CBC file using ID from URL."""
+    requesting_vet_id_str = None
     try:
+        requesting_vet_id_str = get_jwt_identity()
+        try:
+            requesting_vet_id = int(requesting_vet_id_str)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for delete_appointment: {requesting_vet_id_str}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
 
+        # Authorization: Vet can only delete their own appointments
+        appointment = Appointment.query.get_or_404(appointment_id, description=f"Appointment with id {appointment_id} not found")
+        if appointment.veterinarianId != requesting_vet_id:
+            logger.warning(
+                f"Veterinarian {requesting_vet_id} attempt to delete appointment {appointment_id} "
+                f"(owned by {appointment.veterinarianId}) without permission.")
+            return jsonify({"error": "Forbidden. You can only delete your own appointments."}), 403
         appointment = Appointment.query.get_or_404(appointment_id, description=f"Appointment with id {appointment_id} not found")
 
         cbc_filename_to_delete = appointment.CBCpath
@@ -698,10 +804,9 @@ def delete_appointment(appointment_id):
         return jsonify({"message": f"Appointment {appointment_id} deleted successfully"}), 200
 
     except NotFound as e:
-         db.session.rollback()
-         logger.warning(f"Client error deleting appointment {appointment_id}: {e}")
+         logger.warning(f"Not found error in delete_appointment (appt_id: {appointment_id}, requester: {requesting_vet_id_str}): {e}")
          return jsonify({"error": str(e)}), 404
     except Exception as e:
         db.session.rollback()
-        logger.exception(f"Server error deleting appointment {appointment_id}.")
+        logger.exception(f"Server error deleting appointment {appointment_id} (requester: {requesting_vet_id_str}).")
         return jsonify({"error": "An unexpected server error occurred"}), 500

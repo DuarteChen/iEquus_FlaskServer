@@ -30,19 +30,19 @@ def register_veterinarian():
         required_fields = {'name': name, 'email': email, 'password': password, 'idCedulaProfissional': idCedulaProfissional}
         missing_or_empty_fields = [key for key, value in required_fields.items() if not value or str(value).strip() == ""]
         if missing_or_empty_fields:
-            #return jsonify({"error": f"Missing or empty required form fields: {', '.join(missing_or_empty_fields)}"}), 400
             return jsonify({"error": f"Missing or empty required form fields."}), 400
 
-        email_stripped = email.strip()
+        # Validate and normalize the email
         try:
-            validate_email(email_stripped, check_deliverability=False)
+            # The result of validate_email is an object containing the normalized email.
+            validated_email_data = validate_email(email.strip(), check_deliverability=False)
+            normalized_email = validated_email_data.email # .email attribute holds the normalized form
         except EmailNotValidError as e:
-            #return jsonify({"error": f"Invalid email format: {str(e)}"}), 400
             return jsonify({"error": f"Invalid email format."}), 400
 
-        if Veterinarian.query.filter_by(email=email_stripped).first():
+        # Check if a veterinarian with this normalized email already exists
+        if Veterinarian.query.filter_by(email=normalized_email).first():
             return jsonify({"error": "Veterinarian with this email already exists."}), 409
-
         result = zxcvbn(password) 
         #biblioteca do dropbox para verificação de passwords - source ChatGPT
         ''''
@@ -62,20 +62,23 @@ def register_veterinarian():
              if not final_phone_number or not final_country_code:
                  return jsonify({"error": "Both phoneNumber and phoneCountryCode form fields are required if one is provided"}), 400
              try:
-                 full_number = phonenumbers.parse(str(final_phone_number), str(final_country_code))
-                 if not phonenumbers.is_valid_number(full_number):
-                     return jsonify({"error": "Invalid phone number"}), 400
+                full_number = phonenumbers.parse(str(final_phone_number), str(final_country_code))
+                if not phonenumbers.is_valid_number(full_number):
+                    logger(f"Phone number validation error: {str(e)}")
+                    return jsonify({"error": "Invalid phone number"}), 400
              except phonenumbers.phonenumberutil.NumberParseException:
-                 return jsonify({"error": "Invalid phone number format"}), 400
+                logger(f"Phone number validation error: {str(e)}")
+                return jsonify({"error": "Invalid phone number format"}), 400
              except Exception as e:
-                 return jsonify({"error": f"Phone number validation error."}), 400
+                logger(f"Phone number validation error: {str(e)}")
+                return jsonify({"error": f"Phone number validation error."}), 400
         else:
              final_phone_number = None
              final_country_code = None
 
         veterinarian = Veterinarian(
             name=name.strip(),
-            email=email_stripped,
+            email=normalized_email, # Store the normalized email
             phoneNumber=final_phone_number,
             phoneCountryCode=final_country_code,
             idCedulaProfissional=str(idCedulaProfissional).strip(),
@@ -115,28 +118,28 @@ def login_veterinarian():
         if not request.content_type or 'multipart/form-data' not in request.content_type.lower():
              raise UnsupportedMediaType("Content-Type must be multipart/form-data.")
 
-        email = request.form.get('email')
+        email_input = request.form.get('email')
         password = request.form.get('password').strip()
 
-        if not email or not password or email.strip() == "" or password.strip() == "":
+        if not email_input or not password or email_input.strip() == "" or password.strip() == "":
             logger.warning("Login attempt failed: Missing or empty email or password from %s", request.remote_addr)
             return jsonify({"error": "Email and password form fields are required and cannot be empty"}), 400
 
-        email_stripped = email.strip()
         try:
-            validate_email(email_stripped, check_deliverability=False)
+            validated_email_data = validate_email(email_input.strip(), check_deliverability=False)
+            normalized_email = validated_email_data.email
         except EmailNotValidError as e:
-            logger.warning("Login attempt failed: Invalid email format '%s' from %s", email, request.remote_addr)
+            logger.warning("Login attempt failed: Invalid email format '%s' from %s", email_input, request.remote_addr)
             return jsonify({"error": "Invalid credentials"}), 401
 
-        veterinarian = Veterinarian.query.filter_by(email=email_stripped).first()
+        veterinarian = Veterinarian.query.filter_by(email=normalized_email).first()
 
         if veterinarian and veterinarian.check_password(password):
             access_token = create_access_token(identity=str(veterinarian.id))
             logger.info("Successful login for veterinarian ID: %s", veterinarian.id)
             return jsonify(access_token=access_token), 200
         else:
-            logger.warning("Login attempt failed: Invalid credentials for email '%s' from %s", email_stripped, request.remote_addr)
+            logger.warning("Login attempt failed: Invalid credentials for email '%s' from %s", normalized_email, request.remote_addr)
             return jsonify({"error": "Invalid credentials"}), 401
 
     except (BadRequest, UnsupportedMediaType) as e:

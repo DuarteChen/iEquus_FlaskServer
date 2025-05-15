@@ -34,6 +34,7 @@ class Veterinarian(db.Model):
 
     appointments = db.relationship('Appointment', backref='veterinarian', cascade="all, delete-orphan")
     measures = db.relationship('Measure', backref='veterinarian', cascade="all, delete-orphan")
+    horses = db.relationship('Horse', backref='veterinarian', lazy='dynamic', cascade="all, delete-orphan")
 
     def set_password(self, password):
         self.password = bcrypt.generate_password_hash(password).decode('utf-8')
@@ -52,6 +53,7 @@ class Horse(db.Model):
     pictureRightFrontPath = db.Column(db.String(255), nullable=True)
     pictureLeftFrontPath = db.Column(db.String(255), nullable=True)
     pictureRightHindPath = db.Column(db.String(255), nullable=True)
+    veterinarianId = db.Column('Veterinarians_idVeterinarian', db.Integer, db.ForeignKey('Veterinarians.idVeterinarian'), nullable=False)
     pictureLeftHindPath = db.Column(db.String(255), nullable=True)
 
     appointments = db.relationship('Appointment', backref='horse', cascade="all, delete-orphan")

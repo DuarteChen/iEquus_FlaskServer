@@ -18,23 +18,6 @@ CREATE SCHEMA IF NOT EXISTS `iEquusDB` DEFAULT CHARACTER SET utf8mb4 COLLATE utf
 USE `iEquusDB` ;
 
 -- -----------------------------------------------------
--- Table `iEquusDB`.`Horses`
--- -----------------------------------------------------
-CREATE TABLE IF NOT EXISTS `iEquusDB`.`Horses` (
-  `idHorse` INT NOT NULL AUTO_INCREMENT,
-  `name` VARCHAR(255) NOT NULL,
-  `profilePicturePath` VARCHAR(255) NULL DEFAULT NULL,
-  `birthDate` DATETIME NULL DEFAULT NULL,
-  `pictureRightFrontPath` VARCHAR(255) NULL DEFAULT NULL,
-  `pictureLeftFrontPath` VARCHAR(255) NULL DEFAULT NULL,
-  `pictureRightHindPath` VARCHAR(255) NULL DEFAULT NULL,
-  `pictureLeftHindPath` VARCHAR(255) NULL DEFAULT NULL,
-  PRIMARY KEY (`idHorse`))
-ENGINE = InnoDB
-DEFAULT CHARACTER SET = utf8mb3;
-
-
--- -----------------------------------------------------
 -- Table `iEquusDB`.`Hospitals`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `iEquusDB`.`Hospitals` (
@@ -42,13 +25,13 @@ CREATE TABLE IF NOT EXISTS `iEquusDB`.`Hospitals` (
   `name` VARCHAR(255) NOT NULL,
   `streetName` VARCHAR(255) NOT NULL,
   `streetNumber` VARCHAR(45) NOT NULL,
-  `postalCode` VARCHAR(45) NOT NULL,
   `city` VARCHAR(45) NOT NULL,
   `country` VARCHAR(45) NOT NULL,
   `optionalAddressField` VARCHAR(45) NULL DEFAULT NULL,
   `logoPath` VARCHAR(255) NULL DEFAULT NULL,
   PRIMARY KEY (`idHospitals`))
 ENGINE = InnoDB
+AUTO_INCREMENT = 2
 DEFAULT CHARACTER SET = utf8mb4
 COLLATE = utf8mb4_0900_ai_ci;
 
@@ -73,8 +56,34 @@ CREATE TABLE IF NOT EXISTS `iEquusDB`.`Veterinarians` (
     ON DELETE CASCADE
     ON UPDATE CASCADE)
 ENGINE = InnoDB
+AUTO_INCREMENT = 2
 DEFAULT CHARACTER SET = utf8mb4
 COLLATE = utf8mb4_0900_ai_ci;
+
+
+-- -----------------------------------------------------
+-- Table `iEquusDB`.`Horses`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `iEquusDB`.`Horses` (
+  `idHorse` INT NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(255) NOT NULL,
+  `profilePicturePath` VARCHAR(255) NULL DEFAULT NULL,
+  `birthDate` DATETIME NULL DEFAULT NULL,
+  `pictureRightFrontPath` VARCHAR(255) NULL DEFAULT NULL,
+  `pictureLeftFrontPath` VARCHAR(255) NULL DEFAULT NULL,
+  `pictureRightHindPath` VARCHAR(255) NULL DEFAULT NULL,
+  `pictureLeftHindPath` VARCHAR(255) NULL DEFAULT NULL,
+  `Veterinarians_idVeterinarian` INT NOT NULL,
+  PRIMARY KEY (`idHorse`),
+  INDEX `fk_Horses_Veterinarians1_idx` (`Veterinarians_idVeterinarian` ASC) VISIBLE,
+  CONSTRAINT `fk_Horses_Veterinarians1`
+    FOREIGN KEY (`Veterinarians_idVeterinarian`)
+    REFERENCES `iEquusDB`.`Veterinarians` (`idVeterinarian`)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE)
+ENGINE = InnoDB
+AUTO_INCREMENT = 2
+DEFAULT CHARACTER SET = utf8mb3;
 
 
 -- -----------------------------------------------------
@@ -182,6 +191,7 @@ CREATE TABLE IF NOT EXISTS `iEquusDB`.`Measures` (
     FOREIGN KEY (`veterinarianId`)
     REFERENCES `iEquusDB`.`Veterinarians` (`idVeterinarian`))
 ENGINE = InnoDB
+AUTO_INCREMENT = 2
 DEFAULT CHARACTER SET = utf8mb4
 COLLATE = utf8mb4_0900_ai_ci;
 
