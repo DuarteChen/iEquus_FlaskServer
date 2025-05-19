@@ -1,21 +1,22 @@
 import logging
 import os
-import random
 import uuid
 import json
+import requests # Import the requests library
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request, url_for
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from lib.models import Appointment, Horse, Measure, Veterinarian, db
 from PIL import Image
-
 from werkzeug.exceptions import BadRequest, NotFound, UnsupportedMediaType
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
-from ..predict.predict import calculate_body_score # Import the new function
 
 measures_bp = Blueprint('measures', __name__)
+
+# Configuration for the external prediction API
+PREDICTION_API_URL = "http://127.0.0.1:9091/predict"
 
 
 logging.basicConfig(level=logging.INFO)
@@ -91,20 +92,19 @@ def _delete_measure_image(filename):
 
 def forward_coordinates(coordinates_list_of_dicts):
     """
-    Processes coordinates to get algorithm-derived body weight (placeholder)
-    and body condition score (from prediction model).
+    Processes coordinates to get algorithm-derived body weight and body condition score
+    by calling an external prediction API.
 
     Args:
         coordinates_list_of_dicts (list): A list of dictionaries,
                                           e.g., [{'x': x1, 'y': y1}, ..., {'x': x14, 'y': y14}].
                                           Expected to contain 14 points.
     Returns:
-        dict: A dictionary with 'algorithmBW', 'algorithmBCS', and optionally 'error'.
+        dict: A dictionary with 'algorithmBW' (float or None), 'algorithmBCS' (float or None),
+              and optionally 'error' (str).
     """
     logger.info(f"Attempting to process coordinates: {coordinates_list_of_dicts}")
-
-    # Body Weight is still a placeholder
-    algo_bw = random.randint(500, 800)
+    algo_bw = None
     algo_bcs = None
     error_message = None
 
@@ -128,19 +128,38 @@ def forward_coordinates(coordinates_list_of_dicts):
             return {'algorithmBW': algo_bw, 'algorithmBCS': None, 'error': error_message}
 
     if len(flat_coordinates) == 28: # Expect 14 points * 2 coordinates each
+        logger.info(f"Sending {len(flat_coordinates)} coordinates to prediction API: {PREDICTION_API_URL}")
         try:
-            predicted_bcs = calculate_body_score(flat_coordinates)
-            algo_bcs = predicted_bcs # Already a float from calculate_body_score
-            logger.info(f"Successfully calculated Body Score: {algo_bcs}")
-        except ValueError as e: # Catch errors from calculate_body_score (e.g., wrong number of inputs, math errors)
-            error_message = f"Error calculating body score: {e}"
+            payload = {"values": flat_coordinates}
+            response = requests.post(PREDICTION_API_URL, json=payload, timeout=10) # 10 second timeout
+            response.raise_for_status()  # Raises an HTTPError for bad responses (4XX or 5XX)
+            
+            prediction_data = response.json()
+            algo_bcs = prediction_data.get('bcs')
+            algo_bw = prediction_data.get('bw')
+
+            if algo_bcs is None or algo_bw is None:
+                error_message = "Prediction API response missing 'bcs' or 'bw' key."
+                logger.error(f"{error_message} Response: {prediction_data}")
+                algo_bcs = None # Ensure they are None if keys are missing
+                algo_bw = None
+            else:
+                # Ensure they are floats if present
+                algo_bcs = float(algo_bcs) if algo_bcs is not None else None
+                algo_bw = float(algo_bw) if algo_bw is not None else None
+                logger.info(f"Successfully received prediction from API: BCS={algo_bcs}, BW={algo_bw}")
+
+        except requests.exceptions.HTTPError as e:
+            error_message = f"Prediction API returned an error: {e.response.status_code} - {e.response.text}"
             logger.error(error_message)
-        except FileNotFoundError as e: # Catch if model/scaler files are missing (should be caught at startup of predict.py)
-            error_message = f"Model/Scaler file not found for BCS calculation: {e}"
+        except requests.exceptions.RequestException as e: # Catches connection errors, timeouts, etc.
+            error_message = f"Error calling prediction API: {e}"
             logger.error(error_message)
-            # This is a server configuration error, might warrant a different handling
+        except (json.JSONDecodeError, ValueError) as e: # Error parsing JSON or converting to float
+            error_message = f"Error processing prediction API response: {e}"
+            logger.error(error_message)
         except Exception as e:
-            error_message = f"Unexpected error during body score calculation: {e}"
+            error_message = f"Unexpected error during prediction API call: {e}"
             logger.exception(error_message) # Use logger.exception to include stack trace
     elif len(flat_coordinates) > 0:
         error_message = f"Expected 28 coordinate values (14 pairs), but received {len(flat_coordinates)} from {len(coordinates_list_of_dicts)} points."
@@ -152,10 +171,7 @@ def forward_coordinates(coordinates_list_of_dicts):
     if error_message:
         result['error'] = error_message
 
-    return {
-        'algorithmBW': algo_bw,
-        'algorithmBCS': algo_bcs
-    }
+    return result
 
 
 
