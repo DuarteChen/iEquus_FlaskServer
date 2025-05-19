@@ -1,23 +1,23 @@
-from http.client import UNSUPPORTED_MEDIA_TYPE
-from venv import logger
 from email_validator import EmailNotValidError
 from flask import Blueprint, request, jsonify
 from email_validator import validate_email, EmailNotValidError
 from zxcvbn import zxcvbn
 from flask_jwt_extended import jwt_required, get_jwt_identity, create_access_token
 import phonenumbers
-from lib.models import Veterinarian, db
+from lib.models import Veterinarian, db, Hospital # Import Hospital
 from werkzeug.exceptions import NotFound, BadRequest, UnsupportedMediaType
-from lib.models import Veterinarian
+
+import logging # Import standard logging
 
 
 login_bp = Blueprint('login', __name__)
+logger = logging.getLogger(__name__) # Correct logger setup
 
 @login_bp.route('/register', methods=['POST'])
 def register_veterinarian():
     try:
         if not request.content_type or 'multipart/form-data' not in request.content_type.lower():
-             raise UNSUPPORTED_MEDIA_TYPE("Content-Type must be multipart/form-data.")
+             raise UnsupportedMediaType("Content-Type must be multipart/form-data.") # Use correct exception
 
         name = request.form.get('name')
         email = request.form.get('email')
@@ -25,9 +25,19 @@ def register_veterinarian():
         idCedulaProfissional = request.form.get('idCedulaProfissional')
         phoneNumber = request.form.get('phoneNumber')
         phoneCountryCode = request.form.get('phoneCountryCode')
-        hospitalId = request.form.get('hospitalId')
+        hospital_id_str = request.form.get('hospitalId')
 
-        required_fields = {'name': name, 'email': email, 'password': password, 'idCedulaProfissional': idCedulaProfissional}
+        hospitalId_int = None # Default to None if not provided or invalid
+        if hospital_id_str and hospital_id_str.strip():
+            try:
+                hospitalId_int = int(hospital_id_str)
+                if not Hospital.query.get(hospitalId_int):
+                    return jsonify({"error": f"Hospital with id {hospitalId_int} not found."}), 404
+            except ValueError:
+                return jsonify({"error": "Invalid hospitalId format. Must be an integer."}), 400
+        # If hospital_id_str is empty or not provided, hospitalId_int remains None, which is now allowed.
+
+        required_fields = {'name': name, 'email': email, 'password': password}
         missing_or_empty_fields = [key for key, value in required_fields.items() if not value or str(value).strip() == ""]
         if missing_or_empty_fields:
             return jsonify({"error": f"Missing or empty required form fields."}), 400
@@ -41,7 +51,8 @@ def register_veterinarian():
             return jsonify({"error": f"Invalid email format."}), 400
 
         # Check if a veterinarian with this normalized email already exists
-        if Veterinarian.query.filter_by(email=normalized_email).first():
+        existing_veterinarian = Veterinarian.query.filter_by(email=normalized_email).first()
+        if existing_veterinarian is not None:
             return jsonify({"error": "Veterinarian with this email already exists."}), 409
         result = zxcvbn(password) 
         #biblioteca do dropbox para verificação de passwords - source ChatGPT
@@ -64,13 +75,13 @@ def register_veterinarian():
              try:
                 full_number = phonenumbers.parse(str(final_phone_number), str(final_country_code))
                 if not phonenumbers.is_valid_number(full_number):
-                    logger(f"Phone number validation error: {str(e)}")
+                    logger.warning(f"Invalid phone number provided during registration: {final_country_code}{final_phone_number}")
                     return jsonify({"error": "Invalid phone number"}), 400
-             except phonenumbers.phonenumberutil.NumberParseException:
-                logger(f"Phone number validation error: {str(e)}")
+             except phonenumbers.phonenumberutil.NumberParseException as e:
+                logger.warning(f"Phone number parsing error during registration: {e}")
                 return jsonify({"error": "Invalid phone number format"}), 400
              except Exception as e:
-                logger(f"Phone number validation error: {str(e)}")
+                logger.error(f"Unexpected phone number validation error during registration: {e}")
                 return jsonify({"error": f"Phone number validation error."}), 400
         else:
              final_phone_number = None
@@ -81,8 +92,8 @@ def register_veterinarian():
             email=normalized_email, # Store the normalized email
             phoneNumber=final_phone_number,
             phoneCountryCode=final_country_code,
-            idCedulaProfissional=str(idCedulaProfissional).strip(),
-            hospitalId=hospitalId
+            idCedulaProfissional=str(idCedulaProfissional).strip() if idCedulaProfissional else None,
+            hospitalId=hospitalId_int # Use the validated integer hospitalId
         )
         veterinarian.set_password(password)
 

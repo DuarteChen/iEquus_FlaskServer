@@ -1,4 +1,3 @@
-import sys
 import pickle
 import numpy as np
 import pandas as pd
@@ -97,16 +96,3 @@ def calculate_body_score(input_points_flat):
 
         # Ensure the prediction is a standard Python float
     return float(prediction[0])
-
-# Optional: Keep a main block for direct script execution if needed for testing
-# if __name__ == "__main__":
-#     if len(sys.argv) != 29: # script_name + 28 values
-#         print("Usage: python predict.py <value1> <value2> ... <value28>")
-#         sys.exit(1)
-#     try:
-#         cli_input_values = [float(val) for val in sys.argv[1:]]
-#         score = calculate_body_score(cli_input_values)
-#         print(f"Body Score: {score}")
-#     except (ValueError, FileNotFoundError) as e:
-#         print(f"Error: {e}")
-#         sys.exit(1)

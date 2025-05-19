@@ -23,15 +23,16 @@ USE `iEquusDB` ;
 CREATE TABLE IF NOT EXISTS `iEquusDB`.`Hospitals` (
   `idHospitals` INT NOT NULL AUTO_INCREMENT,
   `name` VARCHAR(255) NOT NULL,
-  `streetName` VARCHAR(255) NOT NULL,
-  `streetNumber` VARCHAR(45) NOT NULL,
-  `city` VARCHAR(45) NOT NULL,
-  `country` VARCHAR(45) NOT NULL,
-  `optionalAddressField` VARCHAR(45) NULL DEFAULT NULL,
   `logoPath` VARCHAR(255) NULL DEFAULT NULL,
-  PRIMARY KEY (`idHospitals`))
+  `admin` INT NOT NULL,
+  PRIMARY KEY (`idHospitals`),
+  INDEX `fk_Hospitals_Veterinarians1_idx` (`admin` ASC) VISIBLE,
+  CONSTRAINT `fk_Hospitals_Veterinarians1`
+    FOREIGN KEY (`admin`)
+    REFERENCES `iEquusDB`.`Veterinarians` (`idVeterinarian`)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE)
 ENGINE = InnoDB
-AUTO_INCREMENT = 2
 DEFAULT CHARACTER SET = utf8mb4
 COLLATE = utf8mb4_0900_ai_ci;
 
@@ -46,17 +47,16 @@ CREATE TABLE IF NOT EXISTS `iEquusDB`.`Veterinarians` (
   `phoneNumber` VARCHAR(20) NULL DEFAULT NULL,
   `phoneCountryCode` VARCHAR(10) NULL DEFAULT NULL,
   `password` VARCHAR(255) NOT NULL,
-  `idCedulaProfissional` VARCHAR(40) NOT NULL,
-  `Hospitals_idHospitals` INT NULL DEFAULT NULL,
+  `idCedulaProfissional` VARCHAR(40) NULL DEFAULT NULL,
+  `hospitalId` INT NOT NULL,
   PRIMARY KEY (`idVeterinarian`),
-  INDEX `fk_Veterinarians_Hospitals1_idx` (`Hospitals_idHospitals` ASC) VISIBLE,
+  INDEX `fk_Veterinarians_Hospitals1_idx` (`hospitalId` ASC) VISIBLE,
   CONSTRAINT `fk_Veterinarians_Hospitals1`
-    FOREIGN KEY (`Hospitals_idHospitals`)
+    FOREIGN KEY (`hospitalId`)
     REFERENCES `iEquusDB`.`Hospitals` (`idHospitals`)
     ON DELETE CASCADE
     ON UPDATE CASCADE)
 ENGINE = InnoDB
-AUTO_INCREMENT = 2
 DEFAULT CHARACTER SET = utf8mb4
 COLLATE = utf8mb4_0900_ai_ci;
 
@@ -82,7 +82,6 @@ CREATE TABLE IF NOT EXISTS `iEquusDB`.`Horses` (
     ON DELETE CASCADE
     ON UPDATE CASCADE)
 ENGINE = InnoDB
-AUTO_INCREMENT = 2
 DEFAULT CHARACTER SET = utf8mb3;
 
 
@@ -183,7 +182,9 @@ CREATE TABLE IF NOT EXISTS `iEquusDB`.`Measures` (
   INDEX `fk_Measures_Appointments1_idx` (`appointmentId` ASC) VISIBLE,
   CONSTRAINT `fk_Measures_Appointments1`
     FOREIGN KEY (`appointmentId`)
-    REFERENCES `iEquusDB`.`Appointments` (`idAppointment`),
+    REFERENCES `iEquusDB`.`Appointments` (`idAppointment`)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
   CONSTRAINT `fk_Measures_Horses1`
     FOREIGN KEY (`horseId`)
     REFERENCES `iEquusDB`.`Horses` (`idHorse`),
@@ -191,7 +192,6 @@ CREATE TABLE IF NOT EXISTS `iEquusDB`.`Measures` (
     FOREIGN KEY (`veterinarianId`)
     REFERENCES `iEquusDB`.`Veterinarians` (`idVeterinarian`))
 ENGINE = InnoDB
-AUTO_INCREMENT = 2
 DEFAULT CHARACTER SET = utf8mb4
 COLLATE = utf8mb4_0900_ai_ci;
 
@@ -199,20 +199,3 @@ COLLATE = utf8mb4_0900_ai_ci;
 SET SQL_MODE=@OLD_SQL_MODE;
 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS;
-USE `iEquusDB`;
-
-DELIMITER $$
-USE `iEquusDB`$$
-CREATE
-DEFINER=`root`@`localhost`
-TRIGGER `iEquusDB`.`set_default_password`
-BEFORE INSERT ON `iEquusDB`.`Veterinarians`
-FOR EACH ROW
-BEGIN
-  IF NEW.password IS NULL OR TRIM(NEW.password) = '' THEN
-    SET NEW.password = 'password';
-  END IF;
-END$$
-
-
-DELIMITER ;

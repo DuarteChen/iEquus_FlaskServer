@@ -1,6 +1,6 @@
 import os
 import logging # Changed from 'from venv import logger'
-from flask import Blueprint, jsonify, url_for
+from flask import Blueprint, jsonify, url_for, request
 from lib.models import Hospital
 
 hospitals_bp = Blueprint('hospitals_bp', __name__)
@@ -12,16 +12,20 @@ HOSPITAL_LOGOS_FOLDER = os.path.join('hospitals', 'hospitals_logos')
 logger = logging.getLogger(__name__)
 
 def hospitalToJson(hospital):
+    admin_info = None
+    if hospital.admin_veterinarian: # Access the relationship
+        admin_info = {
+            "idVeterinarian": hospital.admin_veterinarian.id,
+            "name": hospital.admin_veterinarian.name
+        }
+
     return {
         "id": hospital.id,
         "name": hospital.name,
-        "streetName": hospital.streetName,
-        "streetNumber": hospital.streetNumber,
-        "city": hospital.city,
-        "country": hospital.country,
-        "optionalAddressField": hospital.optionalAddressField,
-        "logoPath": _get_image_url_hospital(hospital.logoPath)
+        "logoPath": _get_image_url_hospital(hospital.logoPath),
+        "admin": admin_info # Includes admin vet's ID and name
     }
+
 
 def _get_image_url_hospital(filename):
     if not filename:
