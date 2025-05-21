@@ -4,8 +4,10 @@ from email_validator import validate_email, EmailNotValidError
 from zxcvbn import zxcvbn
 from flask_jwt_extended import jwt_required, get_jwt_identity, create_access_token
 import phonenumbers
-from lib.models import Veterinarian, db, Hospital # Import Hospital
+from lib.models import Veterinarian, db, Hospital 
 from werkzeug.exceptions import NotFound, BadRequest, UnsupportedMediaType
+import requests # For calling the predict service
+from sqlalchemy.exc import SQLAlchemyError # For DB connection errors
 
 import logging # Import standard logging
 
@@ -210,3 +212,47 @@ def change_password():
         db.session.rollback()
         logger.exception(f"Error changing password for veterinarian ID {current_user_id}.")
         return jsonify({"error": "An unexpected error occurred changing password"}), 500
+
+
+@login_bp.route('/health')
+def health_check():
+    predict_service_url = "http://iequus_predict:9091/health" # As defined in docker-compose and predict app
+    status = {
+        "database": "unavailable",
+        "predict_service": "unavailable",
+        "overall_status": "unhealthy"
+    }
+    http_status_code = 503  # Service Unavailable by default
+    
+    # Check database connectivity
+    try:
+        db.session.execute(db.text('SELECT 1'))
+        status["database"] = "ok"
+        logger.debug("Health check: Database connection successful.")
+    except SQLAlchemyError as e:
+        logger.error(f"Health check: Database connection error: {e}")
+        status["database"] = f"error - {type(e).__name__}"
+    except Exception as e:
+        logger.error(f"Health check: Unexpected error during database check: {e}")
+        status["database"] = f"unexpected error - {type(e).__name__}"
+        
+    # Check predict service connectivity
+    try:
+        response = requests.get(predict_service_url, timeout=5) # 5 second timeout
+        if response.status_code == 200 and response.text.strip().upper() == "OK":
+            status["predict_service"] = "ok"
+            logger.debug("Health check: Predict service connection successful.")
+        else:
+            status["predict_service"] = f"error - status code {response.status_code}"
+            logger.warning(f"Health check: Predict service returned status {response.status_code}, content: {response.text[:100]}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Health check: Predict service connection error: {e}")
+        status["predict_service"] = f"error - {type(e).__name__}"
+
+    if status["database"] == "ok" and status["predict_service"] == "ok":
+        status["overall_status"] = "healthy"
+        http_status_code = 200
+
+
+
+    return jsonify(status), http_status_code

@@ -21,3 +21,5 @@ pandas
 matplotlib
 scikit-learn
 zxcvbn
+gunicorn
+Flask-Migrate

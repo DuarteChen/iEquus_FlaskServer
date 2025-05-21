@@ -16,7 +16,7 @@ from werkzeug.utils import secure_filename
 measures_bp = Blueprint('measures', __name__)
 
 # Configuration for the external prediction API
-PREDICTION_API_URL = "http://127.0.0.1:9091/predict"
+PREDICTION_API_URL = "http://iequus_predict:9091/predict"
 
 
 logging.basicConfig(level=logging.INFO)
