@@ -4,14 +4,34 @@ from flask import Blueprint, request, jsonify
 from email_validator import validate_email, EmailNotValidError
 from flask_jwt_extended import jwt_required, get_jwt_identity, create_access_token
 import phonenumbers
-from lib.models import Veterinarian, db
+from lib.models import Veterinarian, db, Hospital
 from werkzeug.exceptions import NotFound, BadRequest, UnsupportedMediaType
+
+from lib.routes.hospitals_routes import hospitalToJson
 
 veterinarians_bp = Blueprint('veterinarians', __name__)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def _get_veterinarian_details_for_response(veterinarian_id):
+    """
+    Helper function to fetch and format veterinarian details for a JSON response.
+    Does NOT perform authorization checks - assumes the caller has already done so.
+    Returns a dictionary or None if the veterinarian is not found.
+    """
+    veterinarian = Veterinarian.query.get(veterinarian_id)
+    if not veterinarian:
+        logger.warning(f"Helper function _get_veterinarian_details_for_response: Veterinarian with ID {veterinarian_id} not found.")
+        return None
+
+    hospital_data = None
+    if veterinarian.hospital:
+        hospital_data = hospitalToJson(veterinarian.hospital)
+
+    return {"idVeterinary": veterinarian.id, "name": veterinarian.name, "email": veterinarian.email,
+            "phoneNumber": veterinarian.phoneNumber, "phoneCountryCode": veterinarian.phoneCountryCode,
+            "idCedulaProfissional": veterinarian.idCedulaProfissional, "hospital": hospital_data}
 
 @jwt_required()
 def add_veterinarian():
@@ -84,33 +104,11 @@ def add_veterinarian():
         return jsonify({"error": "An unexpected error occurred"}), 500
 
 
-@veterinarians_bp.route('/veterinarians', methods=['GET'])
-@jwt_required()
-def get_veterinarians():
-    try:
-        veterinarians = Veterinarian.query.all()
-        veterinarians_list = [{
-            "idVeterinary": vet.id,
-            "name": vet.name,
-            "email": vet.email,
-            "phoneNumber": vet.phoneNumber,
-            "phoneCountryCode": vet.phoneCountryCode,
-            "idCedulaProfissional": vet.idCedulaProfissional
-        } for vet in veterinarians]
-
-        return jsonify(veterinarians_list), 200
-
-    except Exception as e:
-        logger.exception("Error retrieving all veterinarians.")
-        return jsonify({"error": "An unexpected error occurred"}), 500
-
-
 @veterinarians_bp.route('/veterinarian', methods=['GET'])
 @jwt_required()
 def get_current_veterinarian():
     try:
         current_user_id = get_jwt_identity()
-        logger.info(f"Attempting to retrieve veterinarian details for ID from token: {current_user_id}")
 
         try:
             vet_id = int(current_user_id)
@@ -124,6 +122,9 @@ def get_current_veterinarian():
         )
 
         hospital = veterinarian.hospital
+        hospital_data = None
+        if hospital:
+            hospital_data = hospitalToJson(hospital)
 
         return jsonify({
             "idVeterinary": veterinarian.id,
@@ -132,16 +133,7 @@ def get_current_veterinarian():
             "phoneNumber": veterinarian.phoneNumber,
             "phoneCountryCode": veterinarian.phoneCountryCode,
             "idCedulaProfissional": veterinarian.idCedulaProfissional,
-            "hospital": {
-                "id": hospital.id,
-                "name": hospital.name,
-                "streetName": hospital.streetName,
-                "streetNumber": hospital.streetNumber,
-                "postalCode": hospital.postalCode,
-                "city": hospital.city,
-                "country": hospital.country,
-                "optionalAddressField": hospital.optionalAddressField
-            }
+            "hospital": hospital_data
         }), 200
 
     except NotFound as e:
@@ -157,7 +149,7 @@ def get_current_veterinarian():
 def update_current_veterinarian():
     try:
         if not request.content_type or 'multipart/form-data' not in request.content_type.lower():
-             raise UnsupportedMediaType("Content-Type must be multipart/form-data.")
+             raise UnsupportedMediaType("No update data provided in form.")
 
         current_user_id = get_jwt_identity()
         logger.info(f"Attempting to update veterinarian details for ID from token: {current_user_id} using form data")
@@ -187,18 +179,31 @@ def update_current_veterinarian():
 
         if 'email' in form_data:
             new_email = form_data.get('email')
-            final_email = new_email if new_email and new_email.strip() else None
+            normalized_new_email = None
 
-            if veterinarian.email != final_email:
-                if final_email:
+            # If a new email is provided (not empty string)
+            if new_email and new_email.strip():
+                try:
+                    validated_email_data = validate_email(new_email.strip(), check_deliverability=False)
+                    normalized_new_email = validated_email_data.email
+                except EmailNotValidError as e:
+                    return jsonify({"error": f"Invalid email format: {str(e)}"}), 400
+            # If new_email is an empty string or None, normalized_new_email remains None, signifying clearing the email.
+
+            # Only proceed if the normalized new email is different from the current email
+            if veterinarian.email != normalized_new_email:
+                if normalized_new_email: # If a new, valid, normalized email is to be set
                     try:
-                        validate_email(final_email, check_deliverability=False)
-                        existing_vet = Veterinarian.query.filter(Veterinarian.email == final_email, Veterinarian.id != vet_id).first()
+                        # Check if this normalized email is already used by ANOTHER veterinarian
+                        existing_vet = Veterinarian.query.filter(
+                            Veterinarian.email == normalized_new_email,
+                            Veterinarian.id != vet_id  # Exclude the current veterinarian
+                        ).first()
                         if existing_vet:
-                            return jsonify({"error": f"Email '{final_email}' is already in use by another veterinarian."}), 409
+                            return jsonify({"error": f"Email '{normalized_new_email}' is already in use by another veterinarian."}), 409
                     except EmailNotValidError as e:
                         return jsonify({"error": f"Invalid email format: {str(e)}"}), 400
-                veterinarian.email = final_email
+                veterinarian.email = normalized_new_email # Store the normalized email or None
                 updated = True
 
         phone_number_updated = False
@@ -251,10 +256,43 @@ def update_current_veterinarian():
                 veterinarian.idCedulaProfissional = str(new_cedula).strip()
                 updated = True
 
+        if 'hospitalId' in form_data:
+            hospital_id_str = form_data.get('hospitalId')
+
+            # Standardize input: treat None from form (e.g. ?hospitalId&... ) as empty string
+            if hospital_id_str is None:
+                hospital_id_str = ""
+            else:
+                hospital_id_str = hospital_id_str.strip()
+
+            target_hospital_id_for_vet = None # Represents the final state for veterinarian.hospitalId
+
+            if hospital_id_str == "" or hospital_id_str.lower() == "null" or hospital_id_str == "0":
+                # User intends to clear the hospital association
+                target_hospital_id_for_vet = None
+            else:
+                # User intends to set/change to a specific hospital
+                try:
+                    parsed_id = int(hospital_id_str)
+                    if parsed_id <= 0: # Assuming 0 is for clearing, handled above.
+                        return jsonify({"error": "hospitalId, if provided for assignment, must be a positive integer."}), 400
+                    
+                    hospital_to_assign = Hospital.query.get(parsed_id)
+                    if not hospital_to_assign:
+                        return jsonify({"error": f"Hospital with ID {parsed_id} not found."}), 404
+                    target_hospital_id_for_vet = parsed_id
+                except ValueError:
+                    return jsonify({"error": "Invalid hospitalId format. Must be an integer, or empty/null/0 to clear."}), 400
+            
+            # Apply the change if it's different from the current state
+            if veterinarian.hospitalId != target_hospital_id_for_vet:
+                veterinarian.hospitalId = target_hospital_id_for_vet
+                updated = True
+
         if not updated:
-             relevant_fields_present = any(f in form_data for f in ['name', 'email', 'phoneNumber', 'phoneCountryCode', 'idCedulaProfissional'])
+             relevant_fields_present = any(f in form_data for f in ['name', 'email', 'phoneNumber', 'phoneCountryCode', 'idCedulaProfissional', 'hospitalId'])
              if relevant_fields_present:
-                 return jsonify({"message": "No changes detected in provided fields."}), 200
+                 return jsonify({"message": "No changes detected in the provided veterinarian fields."}), 200
              else:
                  return jsonify({"message": "No relevant update fields provided in form."}), 400
 
@@ -262,13 +300,21 @@ def update_current_veterinarian():
         db.session.commit()
         logger.info(f"Veterinarian {vet_id} updated successfully via form data.")
 
+        hospital_data_for_response = None
+        if veterinarian.hospitalId:
+            # Accessing veterinarian.hospital will use the SQLAlchemy relationship.
+            # It should be up-to-date after the commit or if the session is still active.
+            if veterinarian.hospital:
+                hospital_data_for_response = hospitalToJson(veterinarian.hospital)
+
         return jsonify({
             "idVeterinary": veterinarian.id,
             "name": veterinarian.name,
             "email": veterinarian.email,
             "phoneNumber": veterinarian.phoneNumber,
             "phoneCountryCode": veterinarian.phoneCountryCode,
-            "idCedulaProfissional": veterinarian.idCedulaProfissional
+            "idCedulaProfissional": veterinarian.idCedulaProfissional,
+            "hospital": hospital_data_for_response
         }), 200
 
     except NotFound as e:
@@ -314,176 +360,55 @@ def delete_current_veterinarian():
         return jsonify({"error": "An unexpected error occurred during deletion"}), 500
 
 
-@veterinarians_bp.route('/register', methods=['POST'])
-def register_veterinarian():
-    try:
-        if not request.content_type or 'multipart/form-data' not in request.content_type.lower():
-             raise UnsupportedMediaType("Content-Type must be multipart/form-data.")
-
-        name = request.form.get('name')
-        email = request.form.get('email')
-        password = request.form.get('password')
-        idCedulaProfissional = request.form.get('idCedulaProfissional')
-        phoneNumber = request.form.get('phoneNumber')
-        phoneCountryCode = request.form.get('phoneCountryCode')
-        hospitalId = request.form.get('hospitalId')
-
-        required_fields = {'name': name, 'email': email, 'password': password, 'idCedulaProfissional': idCedulaProfissional, 'hospitalId': hospitalId}
-        missing_or_empty_fields = [key for key, value in required_fields.items() if not value or str(value).strip() == ""]
-        if missing_or_empty_fields:
-            return jsonify({"error": f"Missing or empty required form fields: {', '.join(missing_or_empty_fields)}"}), 400
-
-        email_stripped = email.strip()
-        try:
-            validate_email(email_stripped, check_deliverability=False)
-        except EmailNotValidError as e:
-            return jsonify({"error": f"Invalid email format: {str(e)}"}), 400
-
-        if Veterinarian.query.filter_by(email=email_stripped).first():
-            return jsonify({"error": "Veterinarian with this email already exists."}), 409
-
-        if len(password) < 6:
-            return jsonify({"error": "Password must be at least 6 characters long"}), 400
-
-        final_phone_number = phoneNumber if phoneNumber and str(phoneNumber).strip() else None
-        final_country_code = phoneCountryCode if phoneCountryCode and str(phoneCountryCode).strip() else None
-
-        if final_phone_number or final_country_code:
-             if not final_phone_number or not final_country_code:
-                 return jsonify({"error": "Both phoneNumber and phoneCountryCode form fields are required if one is provided"}), 400
-             try:
-                 full_number = phonenumbers.parse(str(final_phone_number), str(final_country_code))
-                 if not phonenumbers.is_valid_number(full_number):
-                     return jsonify({"error": "Invalid phone number"}), 400
-             except phonenumbers.phonenumberutil.NumberParseException:
-                 return jsonify({"error": "Invalid phone number format"}), 400
-             except Exception as e:
-                 return jsonify({"error": f"Phone number validation error: {str(e)}"}), 400
-        else:
-             final_phone_number = None
-             final_country_code = None
-
-        veterinarian = Veterinarian(
-            name=name.strip(),
-            email=email_stripped,
-            phoneNumber=final_phone_number,
-            phoneCountryCode=final_country_code,
-            idCedulaProfissional=str(idCedulaProfissional).strip(),
-            hospitalId=hospitalId
-        )
-        veterinarian.set_password(password)
-
-        db.session.add(veterinarian)
-        db.session.commit()
-        logger.info(f"Veterinarian registered successfully with ID: {veterinarian.id}")
-
-        return jsonify({
-            "message": "Veterinarian registered successfully.",
-            "veterinarian": {
-                "id": veterinarian.id,
-                "name": veterinarian.name,
-                "email": veterinarian.email,
-                "idCedulaProfissional": veterinarian.idCedulaProfissional,
-                "phoneNumber": veterinarian.phoneNumber,
-                "phoneCountryCode": veterinarian.phoneCountryCode,
-                "hospitalId": veterinarian.hospitalId
-            }
-        }), 201
-
-    except (BadRequest, UnsupportedMediaType) as e:
-        logger.warning(f"Client error during registration: {e}")
-        return jsonify({"error": str(e)}), e.code if hasattr(e, 'code') else 400
-    except Exception as e:
-        db.session.rollback()
-        logger.exception("Server error during veterinarian registration.")
-        return jsonify({"error": "An unexpected error occurred during registration."}), 500
-
-
-@veterinarians_bp.route('/login', methods=['POST'])
-def login_veterinarian():
-    try:
-        if not request.content_type or 'multipart/form-data' not in request.content_type.lower():
-             raise UnsupportedMediaType("Content-Type must be multipart/form-data.")
-
-        email = request.form.get('email')
-        password = request.form.get('password')
-
-        if not email or not password or email.strip() == "" or password.strip() == "":
-            logger.warning("Login attempt failed: Missing or empty email or password from %s", request.remote_addr)
-            return jsonify({"error": "Email and password form fields are required and cannot be empty"}), 400
-
-        email_stripped = email.strip()
-        try:
-            validate_email(email_stripped, check_deliverability=False)
-        except EmailNotValidError as e:
-            logger.warning("Login attempt failed: Invalid email format '%s' from %s", email, request.remote_addr)
-            return jsonify({"error": "Invalid credentials"}), 401
-
-        veterinarian = Veterinarian.query.filter_by(email=email_stripped).first()
-
-        if veterinarian and veterinarian.check_password(password):
-            access_token = create_access_token(identity=str(veterinarian.id))
-            logger.info("Successful login for veterinarian ID: %s", veterinarian.id)
-            return jsonify(access_token=access_token), 200
-        else:
-            logger.warning("Login attempt failed: Invalid credentials for email '%s' from %s", email_stripped, request.remote_addr)
-            return jsonify({"error": "Invalid credentials"}), 401
-
-    except (BadRequest, UnsupportedMediaType) as e:
-        logger.warning(f"Client error during login: {e}")
-        return jsonify({"error": str(e)}), e.code if hasattr(e, 'code') else 400
-    except Exception as e:
-        logger.exception("Unexpected server error during login attempt.")
-        return jsonify({"error": "An unexpected server error occurred during login"}), 500
-
-
-@veterinarians_bp.route('/change-password', methods=['POST'])
+@veterinarians_bp.route('/veterinarian/<int:target_vet_id>', methods=['GET'])
 @jwt_required()
-def change_password():
+def get_veterinarian_by_id(target_vet_id):
+    """
+    Retrieves a veterinarian's details by their ID.
+    Access is granted if the requester is the veterinarian themselves,
+    or if both the requester and the target veterinarian belong to the same hospital.
+    """
+    requesting_vet_id_str = None # Initialize for broader scope in exception logging
     try:
-        if not request.content_type or 'multipart/form-data' not in request.content_type.lower():
-             raise UnsupportedMediaType("Content-Type must be multipart/form-data.")
-
-        current_user_id = get_jwt_identity()
-        logger.info(f"Attempting password change for veterinarian ID: {current_user_id}")
-
+        requesting_vet_id_str = get_jwt_identity()
         try:
-            vet_id = int(current_user_id)
+            requesting_vet_id = int(requesting_vet_id_str)
         except (ValueError, TypeError):
-             logger.error(f"Invalid identity type in JWT token during password change: {current_user_id}")
-             return jsonify({"error": "Invalid user identity in token"}), 401
+            logger.error(f"Invalid identity type in JWT token for get_veterinarian_by_id: {requesting_vet_id_str}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
 
-        veterinarian = Veterinarian.query.get_or_404(vet_id, description="Veterinarian not found")
+        requesting_veterinarian = Veterinarian.query.get_or_404(
+            requesting_vet_id,
+            description=f"Requesting veterinarian with id {requesting_vet_id} not found. Your token may be invalid or your account may no longer exist."
+        )
+        target_veterinarian = Veterinarian.query.get_or_404(
+            target_vet_id,
+            description=f"Target veterinarian with id {target_vet_id} not found."
+        )
 
-        old_password = request.form.get('old_password')
-        new_password = request.form.get('new_password')
+        # Authorization check
+        is_own_profile = (requesting_veterinarian.id == target_veterinarian.id)
+        
+        can_view_due_to_hospital = False
+        if (requesting_veterinarian.hospitalId is not None and \
+           target_veterinarian.hospitalId is not None and \
+           requesting_veterinarian.hospitalId == target_veterinarian.hospitalId):
+            can_view_due_to_hospital = True
 
-        if not old_password or not new_password or old_password.strip() == "" or new_password.strip() == "":
-            return jsonify({"error": "Form fields 'old_password' and 'new_password' are required and cannot be empty"}), 400
+        if not (is_own_profile or can_view_due_to_hospital):
+            logger.warning(f"Access denied for vet {requesting_veterinarian.id} to view vet {target_veterinarian.id} profile. Own: {is_own_profile}, Same Hospital: {can_view_due_to_hospital}")
+            return jsonify({"error": "Access forbidden. You can only view your own profile or profiles of veterinarians in the same hospital."}), 403
 
-        if not veterinarian.check_password(old_password):
-            logger.warning(f"Incorrect old password provided for veterinarian ID: {vet_id}")
-            return jsonify({"error": "Incorrect old password"}), 400
+        hospital_data = None
+        if target_veterinarian.hospital: # Accesses the SQLAlchemy relationship
+            hospital_data = hospitalToJson(target_veterinarian.hospital)
 
-        if len(new_password) < 6:
-            return jsonify({"error": "New password must be at least 6 characters long"}), 400
-
-        if old_password == new_password:
-             return jsonify({"error": "New password cannot be the same as the old password"}), 400
-
-        veterinarian.set_password(new_password)
-        db.session.commit()
-        logger.info(f"Password changed successfully for veterinarian ID: {vet_id}")
-
-        return jsonify({"message": "Password changed successfully"}), 200
+        logger.info(f"Veterinarian {requesting_veterinarian.id} successfully accessed profile of veterinarian {target_veterinarian.id}.")
+        return jsonify(idVeterinary=target_veterinarian.id, name=target_veterinarian.name, email=target_veterinarian.email, phoneNumber=target_veterinarian.phoneNumber, phoneCountryCode=target_veterinarian.phoneCountryCode, idCedulaProfissional=target_veterinarian.idCedulaProfissional, hospital=hospital_data), 200
 
     except NotFound as e:
-         logger.warning(f"Veterinarian not found for password change, ID from token {current_user_id}: {e}")
-         return jsonify({"error": str(e)}), 404
-    except (BadRequest, UnsupportedMediaType) as e:
-        logger.warning(f"Client error during password change: {e}")
-        return jsonify({"error": str(e)}), e.code if hasattr(e, 'code') else 400
+        logger.warning(f"Not found error in get_veterinarian_by_id (target: {target_vet_id}, requester from token: {requesting_vet_id_str}): {str(e)}")
+        return jsonify({"error": str(e)}), 404
     except Exception as e:
-        db.session.rollback()
-        logger.exception(f"Error changing password for veterinarian ID {current_user_id}.")
-        return jsonify({"error": "An unexpected error occurred changing password"}), 500
+        logger.exception(f"Error retrieving veterinarian by ID (target: {target_vet_id}, requester from token: {requesting_vet_id_str}).")
+        return jsonify({"error": "An unexpected server error occurred"}), 500

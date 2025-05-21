@@ -16,3 +16,10 @@ python-dotenv
 bcrypt
 flask-bcrypt
 flask-cors
+numpy
+pandas
+matplotlib
+scikit-learn
+zxcvbn
+gunicorn
+Flask-Migrate

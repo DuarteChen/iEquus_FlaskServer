@@ -13,6 +13,8 @@ from lib.routes.veterinarians_routes import veterinarians_bp
 from lib.routes.appointments_routes import appointments_bp
 from lib.routes.measures_routes import measures_bp
 from lib.routes.xray_routes import xray_bp
+from lib.routes.login_routes import login_bp
+from lib.routes.hospitals_routes import hospitals_bp
 
 load_dotenv()
 
@@ -28,7 +30,7 @@ def create_app():
 
     # Carregar configurações do .env
     SECRET_KEY = os.getenv("SECRET_KEY")
-    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")    
     DATABASE_URL = os.getenv("DATABASE_URL")
 
     # Configurar a aplicação Flask
@@ -49,6 +51,10 @@ def create_app():
     app.register_blueprint(appointments_bp)
     app.register_blueprint(measures_bp)
     app.register_blueprint(xray_bp)
+    app.register_blueprint(login_bp)
+    app.register_blueprint(hospitals_bp)
+
+    # Inicializar JWT
 
     jwt = JWTManager(app)
 

@@ -1,9 +1,12 @@
 import logging
 from flask import Blueprint, request, jsonify, url_for
-from flask_jwt_extended import jwt_required
-from lib.models import Client, ClientHorse, Horse, db
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from lib.models import Client, ClientHorse, Horse, db, Veterinarian
 import phonenumbers
 from email_validator import validate_email, EmailNotValidError
+
+from lib.routes.horses_routes import _get_image_url # For consistent image URL generation
+from sqlalchemy import distinct
 
 from werkzeug.exceptions import BadRequest, NotFound, UnsupportedMediaType
 
@@ -13,9 +16,37 @@ clients_bp = Blueprint('clients', __name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def _can_vet_access_client(requesting_vet: Veterinarian, client_to_check: Client) -> bool:
+    """
+    Checks if the requesting veterinarian can access the details of a specific client.
+    Access is granted if the client is associated with any horse that the vet
+    can access (either their own or one from their hospital).
+    """
+    # Find all horses associated with this client
+    client_horse_associations = ClientHorse.query.filter_by(clientId=client_to_check.id).all()
+    if not client_horse_associations:
+        # If client has no horses, they are not accessible via horse-vet linkage by default.
+        # Modify this if "orphan" clients should be accessible under different rules.
+        return False
 
+    for assoc in client_horse_associations:
+        horse = Horse.query.get(assoc.horseId)
+        if not horse: # Should not happen in a consistent DB
+            continue
 
-@clients_bp.route('/clients', methods=['POST'])
+        # Check 1: Is it the vet's own horse?
+        if horse.veterinarianId == requesting_vet.id:
+            return True
+
+        # Check 2: Is it a horse from the vet's hospital?
+        if requesting_vet.hospitalId is not None and \
+           horse.veterinarian is not None and \
+           horse.veterinarian.hospitalId == requesting_vet.hospitalId:
+            return True
+            
+    return False
+
+@clients_bp.route('/client', methods=['POST'])
 @jwt_required()
 def add_client():
     """
@@ -93,10 +124,46 @@ def add_client():
 @clients_bp.route('/clients', methods=['GET'])
 @jwt_required()
 def get_clients():
-    """Gets a list of all clients."""
+    """
+    Gets a list of clients accessible to the requesting veterinarian.
+    A client is accessible if they are associated with a horse managed by the vet
+    or by any vet in the vet's hospital.
+    """
     try:
-        clients = Client.query.order_by(Client.name).all()
+        current_user_id_str = get_jwt_identity()
+        try:
+            requesting_vet_id = int(current_user_id_str)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for get_clients: {current_user_id_str}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
 
+        requesting_vet = Veterinarian.query.get(requesting_vet_id)
+        if not requesting_vet:
+            logger.warning(f"Veterinarian with ID {requesting_vet_id} from token not found (in get_clients).")
+            return jsonify({"error": "Authenticated veterinarian not found"}), 404
+
+        accessible_horse_ids = set()
+        if requesting_vet.hospitalId:
+            # Vet has a hospital, get all horses from all vets in that hospital
+            vets_in_hospital_query = Veterinarian.query.filter_by(hospitalId=requesting_vet.hospitalId).with_entities(Veterinarian.id)
+            vet_ids_in_hospital = {v[0] for v in vets_in_hospital_query.all()}
+            
+            hospital_horses_query = Horse.query.filter(Horse.veterinarianId.in_(list(vet_ids_in_hospital))).with_entities(Horse.id)
+            accessible_horse_ids.update(h[0] for h in hospital_horses_query.all())
+        else:
+            # Only vet's own horses
+            own_horses_query = Horse.query.filter_by(veterinarianId=requesting_vet.id).with_entities(Horse.id)
+            accessible_horse_ids.update(h[0] for h in own_horses_query.all())
+
+        if not accessible_horse_ids:
+            return jsonify([]), 200 # No accessible horses, so no accessible clients via this logic
+
+        # Find client_ids associated with these accessible_horse_ids
+        client_ids_query = db.session.query(distinct(ClientHorse.clientId)).filter(ClientHorse.horseId.in_(list(accessible_horse_ids)))
+        accessible_client_ids = {c[0] for c in client_ids_query.all()}
+
+        clients = Client.query.filter(Client.id.in_(list(accessible_client_ids))).order_by(Client.name).all()
+        
         clients_list = [{
             "idClient": client.id,
             "name": client.name,
@@ -107,7 +174,7 @@ def get_clients():
         return jsonify(clients_list), 200
 
     except Exception as e:
-        logger.exception("Server error getting all clients.")
+        logger.exception(f"Server error getting clients for vet {current_user_id_str}.")
         return jsonify({"error": "An unexpected server error occurred"}), 500
 
 
@@ -115,9 +182,27 @@ def get_clients():
 @clients_bp.route('/client/<int:client_id>', methods=['GET'])
 @jwt_required()
 def get_client_by_id(client_id):
-    """Gets details for a single client using the ID from the URL."""
+    """
+    Gets details for a single client if accessible to the requesting veterinarian.
+    """
+    current_user_id_str = None
     try:
+        current_user_id_str = get_jwt_identity()
+        try:
+            requesting_vet_id = int(current_user_id_str)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for get_client_by_id: {current_user_id_str}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
+
+        requesting_vet = Veterinarian.query.get(requesting_vet_id)
+        if not requesting_vet: # Should not happen with a valid token usually
+            return jsonify({"error": "Authenticated veterinarian not found"}), 404
+
         client = Client.query.get_or_404(client_id, description=f"Client with id {client_id} not found.")
+
+        if not _can_vet_access_client(requesting_vet, client):
+            logger.warning(f"Veterinarian {requesting_vet_id} attempt to access client {client_id} without permission.")
+            return jsonify({"error": f"Client with id {client_id} not found or access denied."}), 404
 
         return jsonify({
                 "idClient": client.id,
@@ -128,8 +213,8 @@ def get_client_by_id(client_id):
             }), 200
     except NotFound as e:
          return jsonify({"error": str(e)}), 404
-    except Exception as e:
-        logger.exception(f"Server error getting client {client_id}.")
+    except Exception as e: # Catch any other unexpected errors
+        logger.exception(f"Server error getting client {client_id} for vet {current_user_id_str}.")
         return jsonify({"error": "An unexpected server error occurred"}), 500
 
 
@@ -145,13 +230,27 @@ def update_client(client_id):
         - 'phoneNumber' (optional form field)
         - 'phoneCountryCode' (optional form field)
     """
+    current_user_id_str = None
     try:
-
         if not request.content_type or 'multipart/form-data' not in request.content_type.lower():
              raise UnsupportedMediaType("Content-Type must be multipart/form-data for PUT.")
 
+        current_user_id_str = get_jwt_identity()
+        try:
+            requesting_vet_id = int(current_user_id_str)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for update_client: {current_user_id_str}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
+
+        requesting_vet = Veterinarian.query.get(requesting_vet_id)
+        if not requesting_vet:
+            return jsonify({"error": "Authenticated veterinarian not found"}), 404
 
         client = Client.query.get_or_404(client_id, description=f"Client with id {client_id} not found.")
+        
+        if not _can_vet_access_client(requesting_vet, client):
+            logger.warning(f"Veterinarian {requesting_vet_id} attempt to update client {client_id} without permission.")
+            return jsonify({"error": f"Client with id {client_id} not found or access denied."}), 404
         updated = False
 
 
@@ -233,10 +332,10 @@ def update_client(client_id):
     except (NotFound, BadRequest, UnsupportedMediaType) as e:
          db.session.rollback()
          logger.warning(f"Client error updating client {client_id}: {e}")
-         return jsonify({"error": str(e)}), e.code if hasattr(e, 'code') else 400
+         return jsonify({"error": str(e)}), getattr(e, 'code', 400)
     except Exception as e:
         db.session.rollback()
-        logger.exception(f"Server error updating client {client_id}.")
+        logger.exception(f"Server error updating client {client_id} by vet {current_user_id_str}.")
         return jsonify({"error": "An unexpected server error occurred"}), 500
 
 
@@ -244,21 +343,35 @@ def update_client(client_id):
 @clients_bp.route('/client/<int:client_id>', methods=['DELETE'])
 @jwt_required()
 def delete_client(client_id):
-    """Deletes a client using the ID from the URL."""
+    """Deletes a client if accessible to the requesting veterinarian."""
+    current_user_id_str = None
     try:
+        current_user_id_str = get_jwt_identity()
+        try:
+            requesting_vet_id = int(current_user_id_str)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for delete_client: {current_user_id_str}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
+
+        requesting_vet = Veterinarian.query.get(requesting_vet_id)
+        if not requesting_vet:
+            return jsonify({"error": "Authenticated veterinarian not found"}), 404
+
         client = Client.query.get_or_404(client_id, description=f"Client with id {client_id} not found.")
 
+        if not _can_vet_access_client(requesting_vet, client):
+            logger.warning(f"Veterinarian {requesting_vet_id} attempt to delete client {client_id} without permission.")
+            return jsonify({"error": f"Client with id {client_id} not found or access denied."}), 404
         db.session.delete(client)
         db.session.commit()
         logger.info(f"Client {client_id} deleted.")
         return jsonify({"message": "Client deleted successfully"}), 200
 
     except NotFound as e:
-         db.session.rollback()
          return jsonify({"error": str(e)}), 404
     except Exception as e:
         db.session.rollback()
-        logger.exception(f"Server error deleting client {client_id}.")
+        logger.exception(f"Server error deleting client {client_id} by vet {current_user_id_str}.")
         return jsonify({"error": "An unexpected server error occurred"}), 500
 
 
@@ -273,11 +386,20 @@ def handle_client_horse_association(client_id):
     POST/PUT: 'horseId' (required), 'isClientHorseOwner' (required, 'true'/'false')
     DELETE: 'horseId' (required)
     """
+    current_user_id_str = None
     try:
-
         if not request.content_type or 'multipart/form-data' not in request.content_type.lower():
              raise UnsupportedMediaType("Content-Type must be multipart/form-data.")
 
+        current_user_id_str = get_jwt_identity()
+        try:
+            requesting_vet_id = int(current_user_id_str)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for handle_client_horse_association: {current_user_id_str}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
+        
+        requesting_vet = Veterinarian.query.get(requesting_vet_id)
+        if not requesting_vet: return jsonify({"error": "Authenticated veterinarian not found"}), 404
 
         horse_id_str = request.form.get('horseId')
         try:
@@ -287,12 +409,25 @@ def handle_client_horse_association(client_id):
              raise BadRequest("Invalid or missing 'horseId' form field.")
 
 
-        client = Client.query.get(client_id)
-        if not client:
-            raise NotFound(f"Client with id {client_id} not found.")
-        horse = Horse.query.get(horse_id)
-        if not horse:
-            raise NotFound(f"Horse with id {horse_id} not found.")
+        client = Client.query.get_or_404(client_id, description=f"Client with id {client_id} not found.")
+        horse = Horse.query.get_or_404(horse_id, description=f"Horse with id {horse_id} not found.")
+
+        # Authorization: Vet must have access to the HORSE to manage its client associations
+        can_manage_horse = False
+        if horse.veterinarianId == requesting_vet.id:
+            can_manage_horse = True
+        elif requesting_vet.hospitalId is not None and \
+             horse.veterinarian and \
+             horse.veterinarian.hospitalId == requesting_vet.hospitalId:
+            can_manage_horse = True
+
+        if not can_manage_horse:
+            logger.warning(
+                f"Veterinarian {requesting_vet.id} attempt to manage client associations "
+                f"for horse {horse_id} (client {client_id}) without permission for the horse."
+            )
+            # Obscure by saying horse not found, consistent with horses_routes.py
+            return jsonify({"error": f"Horse with id {horse_id} not found or access denied."}), 404
 
 
         existing_relation = ClientHorse.query.filter_by(clientId=client_id, horseId=horse_id).first()
@@ -345,10 +480,10 @@ def handle_client_horse_association(client_id):
     except (NotFound, BadRequest, UnsupportedMediaType) as e:
          db.session.rollback()
          logger.warning(f"Client error handling client-horse association for client {client_id}: {e}")
-         return jsonify({"error": str(e)}), e.code if hasattr(e, 'code') else 400
+         return jsonify({"error": str(e)}), getattr(e, 'code', 400)
     except Exception as e:
         db.session.rollback()
-        logger.exception(f"Server error handling client-horse association for client {client_id}.")
+        logger.exception(f"Server error handling client-horse association for client {client_id} by vet {current_user_id_str}.")
         return jsonify({"error": "An unexpected server error occurred"}), 500
 
 
@@ -360,29 +495,34 @@ def get_client_horses(client_id):
     Gets the list of horses associated with a specific client,
     identified by the ID in the URL path.
     """
+    current_user_id_str = None
     try:
+        current_user_id_str = get_jwt_identity()
+        try:
+            requesting_vet_id = int(current_user_id_str)
+        except (ValueError, TypeError):
+            logger.error(f"Invalid identity type in JWT token for get_client_horses: {current_user_id_str}")
+            return jsonify({"error": "Invalid user identity in token"}), 401
 
+        requesting_vet = Veterinarian.query.get(requesting_vet_id)
+        if not requesting_vet: return jsonify({"error": "Authenticated veterinarian not found"}), 404
+        
         client = Client.query.get_or_404(client_id, description=f"Client with id {client_id} not found.")
 
+        if not _can_vet_access_client(requesting_vet, client):
+            logger.warning(f"Veterinarian {requesting_vet_id} attempt to get horses for client {client_id} without permission for the client.")
+            return jsonify({"error": f"Client with id {client_id} not found or access denied."}), 404
         horses_list = []
 
         associations = ClientHorse.query.filter_by(clientId=client_id).all()
         for assoc in associations:
             horse = Horse.query.get(assoc.horseId)
-            if horse:
-                profile_pic_url = None
-                if horse.profilePicturePath:
-                    try:
-
-                        profile_pic_url = url_for('static', filename=f'images/horse_profile/{horse.profilePicturePath}', _external=True)
-                    except RuntimeError:
-                         logger.warning(f"Could not generate URL for profile picture: {horse.profilePicturePath}")
-
+        
+            # Only include horses the vet can access, although the primary check is on the client
+            if horse and (_can_vet_access_client(requesting_vet, client)): # Redundant check, but safe
                 horses_list.append({
                     "idHorse": horse.id,
                     "name": horse.name,
-                    "profilePicturePath": profile_pic_url,
-                    "birthDate": horse.birthDate.isoformat() if horse.birthDate else None,
                     "isOwner": assoc.isClientHorseOwner
                 })
 
@@ -393,5 +533,5 @@ def get_client_horses(client_id):
          logger.warning(f"Client error getting horses for client {client_id}: {e}")
          return jsonify({"error": str(e)}), 404
     except Exception as e:
-        logger.exception(f"Server error getting horses for client {client_id}.")
+        logger.exception(f"Server error getting horses for client {client_id} by vet {current_user_id_str}.")
         return jsonify({"error": "An unexpected server error occurred"}), 500
