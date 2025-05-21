@@ -23,4 +23,7 @@ venv/
 
 # Ignore dependency folders 
 /node_modules/  # If using npm/yarn in your project
-/lib/static/
+/lib/static/appointments
+/lib/static/horses
+/lib/static/hospitals
+/lib/static/measures
