@@ -31,12 +31,13 @@ def create_app():
     # Carregar configurações do .env
     SECRET_KEY = os.getenv("SECRET_KEY")
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")    
-    DATABASE_URL = os.getenv("DATABASE_URL")
+    #DATABASE_URL = os.getenv("DATABASE_URL")
+    DATABASE_URL = "mysql+pymysql://root:flutter_app_db@127.0.0.1/iEquusDB"
 
     # Configurar a aplicação Flask
     app.config['SECRET_KEY'] = SECRET_KEY
     app.config['JWT_SECRET_KEY'] = JWT_SECRET_KEY
-    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=730) #Para não estar sempre a fazer login, o token tem valiidade de 2 anos
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=730) #Para não estar sempre a fazer login, o token tem validade de 2 anos
     app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
     app.config['JWT_ALGORITHM'] = 'HS256'
 

@@ -216,7 +216,9 @@ def change_password():
 
 @login_bp.route('/health')
 def health_check():
-    predict_service_url = "http://iequus_predict:9091/health" # As defined in docker-compose and predict app
+    #predict_service_url = "http://iequus_predict:9091/health" # As defined in docker-compose and predict app - For Docker container
+    predict_service_url = "http://localhost:9091/health" # As defined in docker-compose and predict app
+
     status = {
         "database": "unavailable",
         "predict_service": "unavailable",
@@ -238,7 +240,7 @@ def health_check():
         
     # Check predict service connectivity
     try:
-        response = requests.get(predict_service_url, timeout=5) # 5 second timeout
+        response = requests.get(predict_service_url, timeout=5) 
         if response.status_code == 200 and response.text.strip().upper() == "OK":
             status["predict_service"] = "ok"
             logger.debug("Health check: Predict service connection successful.")
